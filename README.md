@@ -1,6 +1,6 @@
 # Katelyn McDevitt — About Me
 
-A responsive personal website built with Vue 3, TypeScript, and Vite, featuring a blue and green palette, an introduction, filterable projects, and a LinkedIn contact link.
+A compact, single-page introduction built with Vue 3, TypeScript, and Vite. It uses a dark blue and green palette and includes a professional bio, areas of experience, and a LinkedIn contact link.
 
 ## Requirements
 
@@ -28,9 +28,8 @@ This project is intended for local development. Do not publish or deploy it unle
 ```text
 intro/
 ├── src/
-│   ├── App.vue       # Page content, personal details, and project filtering
-│   ├── main.ts       # Vue application entry point
-│   └── style.css     # Colors, typography, artwork, and responsive layout
+│   ├── App.vue       # Page content, personal details, and styles
+│   └── main.ts       # Vue application entry point
 ├── index.html        # Page title and description
 ├── vite.config.ts    # Vite configuration
 ├── tsconfig.json     # TypeScript configuration
@@ -39,13 +38,11 @@ intro/
 
 ## Customize
 
-- **Personal details:** Update the `profile` object in `src/App.vue` to change your name, introduction, LinkedIn URL, or email. Adding an email enables the email and copy-email actions in place of the LinkedIn contact link.
-- **Content:** Edit the about section, projects array, and personal interests in `src/App.vue`. Projects and interests still include placeholder content.
-- **Project filters:** Keep each project's `category` aligned with an entry in the `filters` array. The `All` filter shows every project.
-- **Appearance:** Edit `src/style.css` to adjust the palette, spacing, fonts, and layouts.
+- **Personal details:** Update the `profile` object in `src/App.vue` to change your name or LinkedIn URL. Edit the template to update your biography and experience.
+- **Appearance:** Edit the `<style>` block in `src/App.vue` to adjust the dark palette, typography, spacing, and responsive layout.
 - **Page metadata:** Update the title and description in `index.html`.
 
-Fonts load from Google Fonts, with local fallback fonts when unavailable. The collage and project artwork are drawn with CSS.
+Fonts load from Google Fonts, with local fallback fonts when unavailable.
 
 ## Commands
 
@@ -63,3 +60,9 @@ npm run preview
 ```
 
 Neither command deploys the site. Generated files in `dist/` and installed dependencies in `node_modules/` are ignored by Git.
+
+## React version
+
+Open `/react.html` on the local Vite server for the matching React + TypeScript page. The Vue page remains at `/`. Both pages are included in the production build.
+
+React content and CSS live in `src/react/App.tsx`. Its `styles` constant is rendered through a `<style>` element. Update both the Vue and React component styles when changing the design.

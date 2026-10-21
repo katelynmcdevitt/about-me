@@ -1,32 +1,187 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-// Personal details and contact links.
-const profile = { name: 'Katelyn McDevitt', email: '', linkedin: 'https://www.linkedin.com/in/katelyn-mcdevitt', introduction: 'Front end software engineer with 15+ years of experience as an individual contributor, technical lead, and manager.' }
-const active = ref('All')
-const filters = ['All', 'Digital', 'Explorations']
-const projects = [
-  { number: '01', title: 'A space for your next idea', category: 'Digital', description: 'Introduce a project you’re proud of: the idea, your part, and what you learned.', style: 'blue', label: 'YOUR NEXT CHAPTER', shape: 'orb' },
-  { number: '02', title: 'Something worth exploring', category: 'Explorations', description: 'A small experiment, a side project, or a question you couldn’t leave alone.', style: 'green', label: 'STAY CURIOUS', shape: 'flower' }
-]
-const copied = ref(false)
-async function copyEmail() {
-  if (!profile.email) return
-  try { await navigator.clipboard.writeText(profile.email); copied.value = true; setTimeout(() => copied.value = false, 2000) } catch { window.location.href = `mailto:${profile.email}` }
-}
+const profile = {
+  name: "Katelyn McDevitt",
+  location: "Glen Mills, PA",
+  linkedin: "https://www.linkedin.com/in/katelyn-mcdevitt",
+  email: "katelyn.m.mcdevitt@gmail.com"
+};
 </script>
 
 <template>
   <div class="site-shell">
-    <header><a class="wordmark" href="#" aria-label="Home">{{ profile.name }}</a><nav aria-label="Main navigation"><a href="#about">About</a><a href="#work">Selected work</a><a class="nav-contact" href="#contact">Let’s talk <span>↗</span></a></nav></header>
-    <main>
-      <section class="hero" aria-labelledby="intro-title">
-        <div class="hero-copy"><div class="eyebrow"><span class="dot"></span> A LITTLE INTRODUCTION</div><h1 id="intro-title">Building interfaces.<br>Leading teams.<br><em>Making an impact.</em></h1><p>{{ profile.introduction }}</p><a class="text-link" href="#about">Get to know me <span>↓</span></a></div>
-        <div class="portrait-composition" role="img" aria-label="An abstract paper collage with a sun, rolling hills, and a handwritten hello"><div class="paper"><div class="paper-top">A WORK IN PROGRESS <span>↗</span></div><div class="sun"></div><div class="hill back"></div><div class="hill front"></div><div class="paper-bottom">A little perspective changes everything.</div></div><div class="hello">hello, world!</div><div class="star">✳</div><div class="caption">A little corner of the internet, made my own.</div></div>
-      </section>
-      <section id="about" class="about section"><div class="section-label">01 / THE PERSON</div><div><h2>More than a <em>short bio.</em></h2><p class="large-copy">I’m Katelyn, a front end software engineer with more than 15 years of experience.</p><p class="muted">My experience spans individual contribution, technical leadership, and management—bringing both an engineering and a team perspective to my work.</p><div class="interests"><span>✧ Front end engineering</span><span>↗ Technical leadership</span><span>☀ Management</span></div></div></section>
-      <section id="work" class="work section"><div class="work-heading"><div><div class="section-label">02 / SELECTED WORK</div><h2>A few things <em>I’ve made.</em></h2></div><div class="filters" aria-label="Filter projects"><button v-for="filter in filters" :key="filter" :class="{ selected: active === filter }" :aria-pressed="active === filter" @click="active = filter">{{ filter }}</button></div></div><div class="projects"><article v-for="project in projects.filter(p => active === 'All' || p.category === active)" :key="project.number"><div class="project-art" :class="project.style"><span class="project-number">{{ project.number }} / PROJECT PLACEHOLDER</span><div :class="project.shape"></div><strong>{{ project.label }}</strong><span class="art-note">Ideas taking shape.</span></div><div class="project-title"><h3>{{ project.title }}</h3><span>↗</span></div><p>{{ project.description }}</p><span class="tag">{{ project.category }}</span></article></div></section>
-      <section class="now section"><div class="section-label">03 / IN THE MARGINS</div><div><h2>Life outside <em>the screen.</em></h2><p class="muted">A place for the things you’re reading, learning, making, or simply enjoying lately.</p><div class="notes"><div><span>01</span><h3>Currently learning</h3><p>Add something you’re curious about.</p></div><div><span>02</span><h3>On the nightstand</h3><p>Share a book that stayed with you.</p></div><div><span>03</span><h3>Finding joy in</h3><p>The small things count, too.</p></div></div></div></section>
-      <section id="contact" class="contact"><div class="eyebrow">GOOD THINGS START WITH A CONVERSATION</div><h2>Have something in mind?<br><em>Let’s say hello.</em> <span>↗</span></h2><div v-if="profile.email" class="contact-actions"><a :href="`mailto:${profile.email}`">{{ profile.email }} ↗</a><button @click="copyEmail">{{ copied ? 'Copied!' : 'Copy email' }}</button></div><div v-else class="contact-actions"><a class="text-link" :href="profile.linkedin" target="_blank" rel="noopener noreferrer">Connect on LinkedIn <span>↗</span></a></div></section>
-    </main><footer><a class="wordmark" href="#">{{ profile.name }}<span>✳</span></a><span>A personal space, always evolving.</span><a href="#">Back to top ↑</a></footer>
+    <main id="main">
+      <h1>
+        <em>{{ profile.name }}</em>
+      </h1>
+      <p class="location">Based in {{ profile.location }}</p>
+      <p class="bio">
+        A front end software engineer with 15+ years of experience spanning
+        individual contribution, technical leadership, and
+        management—bringing both an engineering and a team perspective to my
+        work.
+      </p>
+      <!-- <ul class="expertise" aria-label="Experience">
+        <li>Front end engineering</li>
+        <li>Technical leadership</li>
+        <li>Management</li>
+      </ul> -->
+      <div class="contact-actions">
+        <a class="contact-link" :href="`mailto:${profile.email}`">
+          Email me <span aria-hidden="true">↗</span>
+        </a>
+        <a
+          class="contact-link"
+          :href="profile.linkedin"
+          target="_blank"
+          rel="noopener noreferrer"
+          >Connect on LinkedIn <span aria-hidden="true">↗</span></a
+        >
+        <a class="contact-link" href="/KatelynMcDevittResume.pdf" download>
+          Download résumé <span aria-hidden="true">↓</span>
+        </a>
+      </div>
+    </main>
+    <footer>
+      <span>&copy; {{ new Date().getFullYear() }} {{ profile.name }}</span>
+    </footer>
   </div>
 </template>
+
+<style>
+@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap");
+:root {
+  font-family: "DM Sans", sans-serif;
+  color: #e5efef;
+  background: #101b24;
+  color-scheme: dark;
+  font-synthesis: none;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: radial-gradient(ellipse at 90% 30%, #16353480, transparent 60%);
+}
+a {
+  color: inherit;
+  text-decoration: none;
+}
+a:focus-visible {
+  outline: 2px solid #85d6bb;
+  outline-offset: 7px;
+}
+::selection {
+  background: #326b68;
+  color: #fff;
+}
+.site-shell {
+  max-width: 1120px;
+  min-height: 100svh;
+  margin: auto;
+  padding: 0 56px;
+  display: flex;
+  flex-direction: column;
+}
+main {
+  padding: 64px 0 70px;
+  flex: 1;
+}
+h1 {
+  font-family: "Manrope", sans-serif;
+  font-size: clamp(42px, 6.2vw, 72px);
+  line-height: 1.15;
+  letter-spacing: -3px;
+  font-weight: 500;
+  margin: 26px 0 30px;
+}
+h1 em {
+  font-family: Georgia, serif;
+  font-weight: 400;
+  color: #85d6bb;
+}
+p {
+  max-width: 620px;
+  line-height: 1.8;
+  margin: 0;
+}
+.location {
+  color: #85b6c4;
+  font-size: 13px;
+  margin-bottom: 20px;
+}
+.bio {
+  font-size: 15px;
+  color: #9fb5be;
+  margin-top: 12px;
+}
+.expertise {
+  list-style: none;
+  padding: 0;
+  margin: 25px 0 32px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+.expertise li {
+  border: 1px solid #34505b;
+  background: #192d36;
+  border-radius: 30px;
+  padding: 8px 13px;
+  font-size: 11px;
+  color: #b8d4dc;
+}
+.contact-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 15px
+}
+.contact-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 28px;
+  padding: 14px 20px;
+  border-radius: 6px;
+  background: #85d6bb;
+  color: #102c27;
+  font-size: 14px;
+  font-weight: 600;
+  transition: background 0.15s ease;
+}
+.contact-link:hover {
+  background: #a4e6d0;
+}
+footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 25px 0;
+  border-top: 1px solid #2a3b46;
+  color: #8faab2;
+  font-size: 11px;
+}
+@media (max-width: 640px) {
+  .site-shell {
+    padding: 0 24px;
+  }
+  main {
+    padding: 48px 0 56px;
+  }
+  h1 {
+    letter-spacing: -2px;
+  }
+  .bio {
+    font-size: 14px;
+  }
+  footer {
+    font-size: 10px;
+    flex-wrap: wrap;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .contact-link {
+    transition: none;
+  }
+}
+</style>
