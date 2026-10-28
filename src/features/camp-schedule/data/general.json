@@ -1,0 +1,18 @@
+{
+  "season": {
+    "year": 2026,
+    "coverageStart": "2026-06-15",
+    "weekCount": 11,
+    "daysPerWeek": 5
+  },
+  "newCamp": {
+    "cost": 0,
+    "status": "Confirmed",
+    "type": "Other",
+    "dropoff": null,
+    "pickup": null,
+    "paid": false,
+    "noCamp": false
+  },
+  "handoffBufferMinutes": 30
+}

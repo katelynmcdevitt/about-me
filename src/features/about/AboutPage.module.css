@@ -1,0 +1,93 @@
+.site-shell {
+  max-width: 1120px;
+  min-height: 100svh;
+  margin: auto;
+  padding: 0 56px;
+  display: flex;
+  flex-direction: column;
+}
+.site-shell main {
+  padding: 64px 0 70px;
+  flex: 1;
+}
+.site-shell h1 {
+  font-family: "Manrope", sans-serif;
+  font-size: clamp(42px, 6.2vw, 72px);
+  line-height: 1.15;
+  letter-spacing: -3px;
+  font-weight: 500;
+  margin: 26px 0 30px;
+}
+.site-shell h1 em {
+  font-family: Georgia, serif;
+  font-weight: 400;
+  color: #85d6bb;
+}
+.site-shell :where(p) {
+  max-width: 620px;
+  line-height: 1.8;
+  margin: 0;
+}
+.location {
+  color: #85b6c4;
+  font-size: 13px;
+  margin-bottom: 20px;
+}
+.bio {
+  font-size: 15px;
+  color: #9fb5be;
+  margin-top: 12px;
+}
+.contact-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 15px
+}
+.contact-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 28px;
+  padding: 14px 20px;
+  border-radius: 6px;
+  background: #85d6bb;
+  color: #102c27;
+  font-size: 14px;
+  font-weight: 600;
+  transition: background 0.15s ease;
+}
+.contact-link:hover {
+  background: #a4e6d0;
+}
+.site-shell footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 25px 0;
+  border-top: 1px solid #2a3b46;
+  color: #8faab2;
+  font-size: 11px;
+}
+@media (max-width: 640px) {
+  .site-shell {
+    padding: 0 24px;
+  }
+  .site-shell main {
+    padding: 48px 0 56px;
+  }
+  .site-shell h1 {
+    letter-spacing: -2px;
+  }
+  .bio {
+    font-size: 14px;
+  }
+  .site-shell footer {
+    font-size: 10px;
+    flex-wrap: wrap;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .contact-link {
+    transition: none;
+  }
+}

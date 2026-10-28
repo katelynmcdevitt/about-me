@@ -1,0 +1,66 @@
+.page {
+  max-width: 1120px;
+  min-height: 100svh;
+  margin: auto;
+  padding: 64px 56px;
+}
+
+.page a {
+  color: #85d6bb;
+}
+.page h1 {
+  font-family: "Manrope", sans-serif;
+  font-size: 48px;
+  font-weight: 500;
+}
+.page p {
+  max-width: 620px;
+  color: #9fb5be;
+  line-height: 1.8;
+}
+
+@media (max-width: 640px) {
+  .page {
+    padding: 48px 24px;
+  }
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 20px;
+  margin-top: 32px;
+}
+.page .card {
+  display: block;
+  max-width: 480px;
+  padding: 28px;
+  background: #15252f;
+  border: 1px solid #34505b;
+  border-radius: 12px;
+  color: #e5efef;
+  transition: border-color 0.15s ease;
+}
+.page .card:hover {
+  border-color: #85d6bb;
+}
+.card h2 {
+  display: flex;
+  justify-content: space-between;
+  font-family: "Manrope", sans-serif;
+  font-size: 24px;
+  font-weight: 500;
+}
+.card h2 span {
+  color: #85d6bb;
+}
+.eyebrow {
+  color: #85b6c4;
+  font-size: 11px;
+  letter-spacing: 1.5px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .page .card {
+    transition: none;
+  }
+}
