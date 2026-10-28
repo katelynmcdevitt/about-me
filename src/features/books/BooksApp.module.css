@@ -1752,3 +1752,198 @@
     align-self: flex-start;
   }
 }
+
+.root :global(fieldset.app-shell) {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-inline-size: 0;
+}
+.root :global(.library-status),
+.root :global(.library-error) {
+  padding: 16px 24px;
+  margin: 0;
+  background: var(--surface-raised);
+  color: var(--ink);
+}
+.root :global(.library-error) {
+  border-bottom: 1px solid var(--gold);
+}
+.root :global(.library-error button) {
+  margin-left: 12px;
+  color: var(--green);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.root :global(.import-source) {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.root :global(.import-source select) {
+  color: var(--ink);
+  background: var(--surface-raised);
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+.root :global(button:disabled) {
+  cursor: wait;
+  opacity: 0.6;
+}
+.root :global(.import-preview) {
+  position: fixed;
+  inset: 0;
+  width: min(820px, calc(100vw - 32px));
+  max-height: calc(100svh - 32px);
+  overflow: auto;
+  margin: auto;
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+  color: var(--ink);
+}
+.root :global(.import-preview::backdrop) {
+  background: #071018bd;
+}
+.root :global(.import-preview h2) {
+  margin: 0 28px 12px 0;
+  font-family: var(--display);
+  font-weight: 500;
+}
+.root :global(.import-preview p) {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.root :global(.preview-close) {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  cursor: pointer;
+}
+.root :global(.preview-summary) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.root :global(.preview-summary span) {
+  padding: 8px 10px;
+  background: var(--surface-raised);
+  border-radius: 5px;
+  font-size: 12px;
+}
+.root :global(.preview-rows) {
+  overflow: auto;
+  max-height: 40svh;
+}
+.root :global(.preview-rows table) {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 12px;
+}
+.root :global(.preview-rows th),
+.root :global(.preview-rows td) {
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--line);
+  min-width: 50px;
+}
+.root :global(.preview-actions) {
+  display: flex;
+  justify-content: flex-end;
+  gap: 18px;
+  margin-top: 24px;
+}
+.root :global(.import-history) {
+  margin: 24px 0;
+  border-top: 1px solid var(--line);
+  padding-top: 20px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.root :global(.import-history h2) {
+  font-family: var(--display);
+  font-weight: 500;
+  color: var(--ink);
+}
+.root :global(.import-history ul) {
+  padding-left: 18px;
+  line-height: 1.9;
+}
+@media (max-width: 620px) {
+  .root :global(.topbar-right) {
+    justify-content: flex-end;
+  }
+  .root :global(.import-preview) {
+    padding: 20px;
+  }
+}
+
+.root :global(.library-nav) {
+  display: grid;
+  gap: 4px;
+}
+.root :global(.classification-help) {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 0 0 18px;
+}
+@media (max-width: 620px) {
+  .root :global(.library-nav) {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 6px;
+  }
+  .root :global(.library-nav .side-link) {
+    width: auto;
+    flex: 0 0 auto;
+    min-height: 34px;
+    padding: 0 10px;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+}
+
+.root :global(.classification-controls) {
+  grid-template-columns: minmax(0, 1fr);
+}
+.root :global(.classification-buttons) {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+}
+.root :global(.classification-buttons button) {
+  flex: 1;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--green);
+  background: var(--surface-raised);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.root :global(.classification-buttons button:hover:not(:disabled)) {
+  border-color: var(--green);
+  background: var(--teal);
+  color: var(--ink);
+}
+@media (max-width: 620px) {
+  .root :global(.classification-controls) {
+    flex-wrap: wrap;
+  }
+}

@@ -6,3 +6,10 @@ out/
 .DS_Store
 .env*
 !.env.example
+
+# Local application database and SQLite sidecars
+/data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+/backups/

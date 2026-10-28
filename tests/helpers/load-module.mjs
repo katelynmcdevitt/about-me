@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import ts from "typescript";
 
 // Exercise the actual TypeScript modules with Node's built-in test runner.
@@ -30,6 +30,7 @@ function moduleURL(filename) {
     );
     return `from ${JSON.stringify(moduleURL(target))}`;
   });
+  js += `\n//# sourceURL=${pathToFileURL(filename).href}`;
   const url = `data:text/javascript;base64,${Buffer.from(js).toString("base64")}`;
   cache.set(filename, url);
   return url;

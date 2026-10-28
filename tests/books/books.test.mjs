@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { loadFile } from "../helpers/load-module.mjs";
 
 const dom = new JSDOM("<!doctype html><html><body></body></html>", {
@@ -15,6 +18,12 @@ Object.assign(globalThis, {
   FileReader: dom.window.FileReader,
   IS_REACT_ACT_ENVIRONMENT: true,
 });
+dom.window.HTMLDialogElement.prototype.showModal = function () {
+  this.open = true;
+};
+dom.window.HTMLDialogElement.prototype.close = function () {
+  this.open = false;
+};
 const { render, fireEvent, screen, waitFor, cleanup, within, act } =
   await import("@testing-library/react");
 const { createElement } = await import("react");
@@ -48,15 +57,62 @@ const {
 } = model;
 const originalFetch = globalThis.fetch;
 const originalSetItem = dom.window.Storage.prototype.setItem;
-const sheetCsv =
-  "Title,Author,Form,Nonfiction?,Rating,Date Read\nTest memoir,Writer B,Audio,Yes,4.5,2026/10/01\nTest novel,Writer A,Kindle,No,5,2025/09/01";
-const mockSheet = () => {
-  globalThis.fetch = async (url) => {
-    assert.match(String(url), /^\/api\/books\/google-sheet\/\d+$/);
-    return new Response(sheetCsv);
-  };
+const testRoot = mkdtempSync(join(tmpdir(), "books-api-test-"));
+const { GET: libraryGet, PATCH: libraryPatch } = await loadFile(
+  new URL("../../src/app/api/books/library/route.ts", import.meta.url),
+);
+const { POST: previewPost } = await loadFile(
+  new URL("../../src/app/api/books/imports/route.ts", import.meta.url),
+);
+const { POST: confirmPost } = await loadFile(
+  new URL(
+    "../../src/app/api/books/imports/[id]/confirm/route.ts",
+    import.meta.url,
+  ),
+);
+const { getBooksStore } = await loadFile(
+  new URL("../../src/server/books/database.ts", import.meta.url),
+);
+let fileIndex = 0;
+const apiFetch = async (url, init = {}) => {
+  const path = String(url);
+  const request = new Request(`http://localhost:3000${path}`, init);
+  if (path === "/api/books/library")
+    return init.method === "PATCH" ? libraryPatch(request) : libraryGet();
+  if (path === "/api/books/imports") return previewPost(request);
+  const confirm = path.match(/^\/api\/books\/imports\/([^/]+)\/confirm$/);
+  if (confirm)
+    return confirmPost(request, {
+      params: Promise.resolve({ id: confirm[1] }),
+    });
+  throw new Error(`Unexpected request: ${path}`);
 };
+const inputCsv =
+  "Book Id,Title,Author,Exclusive Shelf,My Rating,Date Read\n123,Imported book,Writer,read,4.5,2026/10/01\n999,Unread,Writer,to-read,0,";
+const sheetCsv = inputCsv;
+const uploadFile = (text, name = "goodreads.csv") => ({
+  name,
+  size: text.length,
+  text: async () => text,
+});
+const jsonRequest = (body, method = "POST", headers = {}) => ({
+  method,
+  headers: { "Content-Type": "application/json", ...headers },
+  body: JSON.stringify(body),
+});
+async function seed() {
+  const preview = await (
+    await apiFetch(
+      "/api/books/imports",
+      jsonRequest({ source: "goodreads", filename: "seed.csv", csv: inputCsv }),
+    )
+  ).json();
+  return (
+    await apiFetch(`/api/books/imports/${preview.id}/confirm`, jsonRequest({}))
+  ).json();
+}
 test.beforeEach(() => {
+  process.env.BOOKS_DATABASE_PATH = join(testRoot, `${fileIndex++}.sqlite`);
   localStorage.clear();
   globalThis.fetch = async () => {
     throw new Error("Offline");
@@ -65,8 +121,14 @@ test.beforeEach(() => {
 });
 test.afterEach(() => {
   cleanup();
+  getBooksStore().close();
   globalThis.fetch = originalFetch;
   dom.window.Storage.prototype.setItem = originalSetItem;
+});
+
+test.after(() => {
+  delete process.env.BOOKS_DATABASE_PATH;
+  rmSync(testRoot, { recursive: true, force: true });
 });
 
 test("Goodreads rows retain read books, fractional ratings, normalized ISBNs and annotations", () => {
@@ -209,180 +271,340 @@ test("Next.js sheet endpoint limits tabs, disables caching, and handles upstream
   assert.equal((await call("311097372")).status, 502);
 });
 
-test("UI sync replaces demo books, renders decimal ratings, and filters, sorts, and persists annotations", async () => {
-  mockSheet();
+test("CSV UI previews without saving, confirms, persists edits, and reloads from the database", async () => {
+  globalThis.fetch = apiFetch;
   render(createElement(BooksApp));
-  await waitFor(() => assert.equal(screen.getAllByRole("article").length, 2));
-  assert.equal(screen.queryByRole("heading", { name: "Circe" }), null);
-  assert.ok(screen.getByText("4.5"));
-  assert.equal(localStorage.getItem(DEMO_KEY), "false");
-  fireEvent.change(
-    screen.getByRole("searchbox", { name: "Search books and authors" }),
-    { target: { value: "memoir" } },
+  await screen.findByRole("heading", { name: "No books yet" });
+  await waitFor(() =>
+    assert.equal(
+      screen.getByLabelText("Import CSV").closest("fieldset").disabled,
+      false,
+    ),
   );
-  assert.equal(screen.getAllByRole("article").length, 1);
-  fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
-  fireEvent.change(screen.getByRole("combobox", { name: "Sort books" }), {
-    target: { value: "author" },
+  fireEvent.change(screen.getByLabelText("Import CSV"), {
+    target: { files: [uploadFile(inputCsv)] },
   });
-  assert.equal(
-    within(screen.getAllByRole("article")[0]).getByRole("heading").textContent,
-    "Test novel",
-  );
+  await screen.findByRole("dialog", { name: "Review your import" });
+  assert.equal(getBooksStore().getLibrary().books.length, 0);
+  assert.ok(screen.getByText("1 new readings"));
+  assert.ok(screen.getByText("1 skipped"));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm import" }));
+  await screen.findByRole("heading", { name: "Imported book" });
+  assert.equal(screen.queryByRole("dialog"), null);
+  assert.ok(within(screen.getByRole("article")).getByText("4.5"));
   fireEvent.click(screen.getByRole("button", { name: "Add category" }));
   fireEvent.change(screen.getByLabelText("New category name"), {
     target: { value: "Favorites" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Save category" }));
+  await waitFor(() =>
+    assert.ok(screen.getByRole("button", { name: /^Favorites/ })),
+  );
   fireEvent.click(screen.getByRole("button", { name: /^All books/ }));
   fireEvent.change(
-    screen.getByRole("combobox", { name: "Category for Test novel" }),
+    screen.getByRole("combobox", { name: "Category for Imported book" }),
     { target: { value: "Favorites" } },
   );
+  await waitFor(() =>
+    assert.equal(getBooksStore().getLibrary().books[0].category, "Favorites"),
+  );
+  await waitFor(() =>
+    assert.ok(
+      !screen
+        .getByRole("combobox", { name: "Type for Imported book" })
+        .closest("fieldset").disabled,
+    ),
+  );
   fireEvent.change(
-    screen.getByRole("combobox", { name: "Type for Test novel" }),
+    screen.getByRole("combobox", { name: "Type for Imported book" }),
     { target: { value: "Nonfiction" } },
   );
-  fireEvent.click(
-    screen.getByRole("button", { name: "Add tag to Test novel" }),
+  await waitFor(() =>
+    assert.equal(getBooksStore().getLibrary().books[0].kind, "Nonfiction"),
   );
-  fireEvent.change(screen.getByLabelText("New tag for Test novel"), {
+  await waitFor(() =>
+    assert.ok(
+      !screen
+        .getByRole("button", { name: "Add tag to Imported book" })
+        .closest("fieldset").disabled,
+    ),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Add tag to Imported book" }),
+  );
+  fireEvent.change(screen.getByLabelText("New tag for Imported book"), {
     target: { value: "Revisit" },
   });
   fireEvent.click(
-    screen.getByRole("button", { name: "Save tag for Test novel" }),
+    screen.getByRole("button", { name: "Save tag for Imported book" }),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Sync sheet" }));
-  await waitFor(() =>
-    assert.ok(screen.getByRole("button", { name: "Sync sheet" })),
-  );
-  const novel = JSON.parse(localStorage.getItem(STORAGE_KEY)).find(
-    (b) => b.title === "Test novel",
-  );
-  assert.equal(novel.category, "Favorites");
-  assert.equal(novel.kind, "Nonfiction");
-  assert.deepEqual(novel.tags, ["Revisit"]);
+  await screen.findByRole("button", {
+    name: "Remove Revisit tag from Imported book",
+  });
   cleanup();
-  globalThis.fetch = async () => {
-    throw new Error("Offline");
-  };
   render(createElement(BooksApp));
-  await screen.findByText("Offline");
-  assert.equal(
-    screen.getByRole("combobox", { name: "Type for Test novel" }).value,
-    "Nonfiction",
-  );
-  assert.deepEqual(JSON.parse(localStorage.getItem(CATEGORIES_KEY)), [
-    "Favorites",
-  ]);
-  fireEvent.click(
-    screen.getByRole("button", { name: "Remove Revisit tag from Test novel" }),
-  );
-  assert.deepEqual(
-    JSON.parse(localStorage.getItem(STORAGE_KEY)).find(
-      (b) => b.title === "Test novel",
-    ).tags,
-    [],
-  );
-});
-
-test("Goodreads CSV UI imports read books and handles invalid files", async () => {
-  render(createElement(BooksApp));
-  await screen.findByText("Offline");
-  const input = screen.getByLabelText("Import CSV");
-  fireEvent.change(input, {
-    target: {
-      files: [
-        new dom.window.File(
-          [
-            "Title,Author,Exclusive Shelf,My Rating\nImported book,Writer,read,4.5\nUnread,Writer,to-read,0",
-          ],
-          "goodreads.csv",
-          { type: "text/csv" },
-        ),
-      ],
-    },
-  });
   await screen.findByRole("heading", { name: "Imported book" });
-  assert.equal(screen.getAllByRole("article").length, 1);
-  assert.ok(within(screen.getByRole("article")).getByText("4.5"));
-  fireEvent.change(input, {
-    target: {
-      files: [
-        new dom.window.File(["Something,Else\nx,y"], "invalid.csv", {
-          type: "text/csv",
-        }),
-      ],
-    },
-  });
-  await screen.findByText(/does not look like a Goodreads export/);
-  assert.equal(screen.getAllByRole("article").length, 1);
-});
-
-test("library backups validate before replacing books and preserve tags, categories and manual types", async () => {
-  render(createElement(BooksApp));
-  await screen.findByText("Offline");
-  const backup = {
-    version: 1,
-    books: [
-      {
-        ...sampleBooks[0],
-        title: "Restored book",
-        tags: ["Restored tag"],
-        kind: "Nonfiction",
-        kindSource: "manual",
-      },
-    ],
-    categories: ["Restored category"],
-    isDemo: false,
-    lastSyncedAt: "",
-  };
-  fireEvent.change(screen.getByLabelText("Import library backup"), {
-    target: {
-      files: [
-        { name: "backup.json", text: async () => JSON.stringify(backup) },
-      ],
-    },
-  });
-  await screen.findByRole("heading", { name: "Restored book" });
-  assert.ok(screen.getByText("Restored tag"));
-  assert.ok(screen.getByRole("button", { name: /Restored category/ }));
   assert.equal(
-    screen.getByRole("combobox", { name: "Type for Restored book" }).value,
+    screen.getByRole("combobox", { name: "Category for Imported book" }).value,
+    "Favorites",
+  );
+  assert.equal(
+    screen.getByRole("combobox", { name: "Type for Imported book" }).value,
     "Nonfiction",
   );
-  assert.throws(() =>
-    parseLibraryBackup({ ...backup, books: [{ title: "Broken" }] }),
-  );
-  assert.throws(() => parseLibraryBackup({ ...backup, categories: [null] }));
-  window.confirm = () => false;
-  await act(async () =>
-    fireEvent.change(screen.getByLabelText("Import library backup"), {
-      target: {
-        files: [
-          {
-            name: "empty.json",
-            text: async () => JSON.stringify({ ...backup, books: [] }),
-          },
-        ],
-      },
+  assert.ok(
+    screen.getByRole("button", {
+      name: "Remove Revisit tag from Imported book",
     }),
   );
-  assert.ok(screen.getByRole("heading", { name: "Restored book" }));
+  assert.equal(localStorage.getItem(STORAGE_KEY), null);
 });
 
-test("unavailable browser storage warns without crashing or losing in-memory editing", async () => {
-  dom.window.Storage.prototype.setItem = () => {
-    throw new Error("Full");
-  };
+test("Google Sheets CSV import, cancel, search and sorting work against database entries", async () => {
+  globalThis.fetch = apiFetch;
   render(createElement(BooksApp));
-  await screen.findByText("Offline");
-  assert.match(screen.getByRole("alert").textContent, /could not be saved/);
-  fireEvent.change(screen.getByRole("combobox", { name: "Type for Circe" }), {
-    target: { value: "Fiction" },
+  await screen.findByRole("heading", { name: "No books yet" });
+  await waitFor(() =>
+    assert.equal(
+      screen.getByLabelText("Import CSV").closest("fieldset").disabled,
+      false,
+    ),
+  );
+  fireEvent.change(screen.getByRole("combobox", { name: "CSV source" }), {
+    target: { value: "sheets" },
+  });
+  const csv =
+    "October 2026,,Form,Nonfiction?,Rating\nMemoir,Writer B,Audio,Yes,4.5\nNovel,Writer A,Kindle,No,5";
+  fireEvent.change(screen.getByLabelText("Import CSV"), {
+    target: { files: [uploadFile(csv, "reading.csv")] },
+  });
+  await screen.findByRole("dialog");
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  assert.equal(getBooksStore().getLibrary().books.length, 0);
+  fireEvent.change(screen.getByLabelText("Import CSV"), {
+    target: { files: [uploadFile(csv, "reading.csv")] },
+  });
+  await screen.findByRole("dialog");
+  fireEvent.click(screen.getByRole("button", { name: "Confirm import" }));
+  await screen.findByRole("heading", { name: "Novel" });
+  fireEvent.change(screen.getByRole("combobox", { name: "Sort books" }), {
+    target: { value: "author" },
   });
   assert.equal(
-    screen.getByRole("combobox", { name: "Type for Circe" }).value,
-    "Fiction",
+    within(screen.getAllByRole("article")[0]).getByRole("heading").textContent,
+    "Novel",
   );
+  fireEvent.change(screen.getByRole("searchbox"), {
+    target: { value: "memoir" },
+  });
+  assert.equal(screen.getAllByRole("article").length, 1);
+  assert.equal(getBooksStore().getLibrary().books[0].format, "Audio");
+});
+
+test("legacy browser library migrates only after preview and confirmation, leaving browser data intact", async () => {
+  const saved = [
+    {
+      ...sampleBooks[0],
+      tags: ["Legacy tag"],
+      kind: "Fiction",
+      kindSource: "manual",
+    },
+  ];
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
+  localStorage.setItem(CATEGORIES_KEY, JSON.stringify(["Legacy category"]));
+  localStorage.setItem(DEMO_KEY, "false");
+  globalThis.fetch = apiFetch;
+  render(createElement(BooksApp));
+  await screen.findByRole("heading", { name: "No books yet" });
+  await waitFor(() =>
+    assert.equal(
+      screen.getByLabelText("Import CSV").closest("fieldset").disabled,
+      false,
+    ),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Preview browser migration" }),
+  );
+  await screen.findByRole("dialog");
+  assert.equal(getBooksStore().getLibrary().books.length, 0);
+  fireEvent.click(screen.getByRole("button", { name: "Confirm import" }));
+  await screen.findByRole("heading", { name: "Circe" });
+  assert.ok(
+    screen.getByRole("button", { name: "Remove Legacy tag tag from Circe" }),
+  );
+  assert.equal(localStorage.getItem(STORAGE_KEY), JSON.stringify(saved));
+  assert.equal(
+    screen.queryByRole("button", { name: "Preview browser migration" }),
+    null,
+  );
+});
+
+test("failed saves show an error without changing the displayed or stored annotation", async () => {
+  globalThis.fetch = apiFetch;
+  await seed();
+  render(createElement(BooksApp));
+  await screen.findByRole("heading", { name: "Imported book" });
+  globalThis.fetch = async (url, init) =>
+    init?.method === "PATCH"
+      ? Response.json({ error: "Database unavailable" }, { status: 500 })
+      : apiFetch(url, init);
+  fireEvent.change(
+    screen.getByRole("combobox", { name: "Type for Imported book" }),
+    { target: { value: "Nonfiction" } },
+  );
+  await screen.findByRole("alert");
+  assert.match(screen.getByRole("alert").textContent, /Database unavailable/);
+  assert.equal(
+    screen.getByRole("combobox", { name: "Type for Imported book" }).value,
+    "Unclear",
+  );
+  assert.equal(getBooksStore().getLibrary().books[0].kind, "Unclear");
+});
+
+test("HTTP validation rejects cross-origin writes, invalid edits, malformed and oversized payloads", async () => {
+  assert.equal(
+    (
+      await libraryPatch(
+        new Request(
+          "http://localhost:3000/api/books/library",
+          jsonRequest(
+            { action: "addCategory", name: "bad", revision: 0 },
+            "PATCH",
+            { Origin: "https://example.com" },
+          ),
+        ),
+      )
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await previewPost(
+        new Request("http://localhost/api/books/imports", {
+          method: "POST",
+          body: "x",
+          headers: { "Content-Type": "text/plain" },
+        }),
+      )
+    ).status,
+    415,
+  );
+  assert.equal(
+    (
+      await previewPost(
+        new Request("http://localhost/api/books/imports", {
+          method: "POST",
+          body: "{",
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await previewPost(
+        new Request("http://localhost/api/books/imports", {
+          method: "POST",
+          body: "{}",
+          headers: {
+            "Content-Type": "application/json",
+            "Content-Length": String(6 * 1024 * 1024),
+          },
+        }),
+      )
+    ).status,
+    413,
+  );
+  assert.equal(
+    (
+      await libraryPatch(
+        new Request(
+          "http://localhost/api/books/library",
+          jsonRequest({ action: "bad" }, "PATCH"),
+        ),
+      )
+    ).status,
+    400,
+  );
+  assert.equal(getBooksStore().getLibrary().books.length, 0);
+});
+
+test("local writes accept the actual Host when Next normalizes the URL to localhost", async () => {
+  const request = new Request(
+    "http://localhost:3000/api/books/library",
+    jsonRequest(
+      { action: "addCategory", name: "Host test", revision: 0 },
+      "PATCH",
+      { Host: "127.0.0.1:3000", Origin: "http://127.0.0.1:3000" },
+    ),
+  );
+  const response = await libraryPatch(request);
+  assert.equal(response.status, 200);
+  assert.ok((await response.json()).categories.includes("Host test"));
+  const foreignHost = new Request(
+    "http://localhost:3000/api/books/library",
+    jsonRequest(
+      { action: "addCategory", name: "Rejected", revision: 1 },
+      "PATCH",
+      { Host: "external.example:3000", Origin: "http://external.example:3000" },
+    ),
+  );
+  assert.equal((await libraryPatch(foreignHost)).status, 403);
+});
+
+test("classification view shows only unclear books, retains failures, and removes successfully classified books", async () => {
+  globalThis.fetch = apiFetch;
+  await seed();
+  const preview = getBooksStore().previewImport({
+    source: "sheets",
+    filename: "classified.csv",
+    csv: "Title,Author,Nonfiction?\nAlready classified,Writer,Yes",
+  });
+  getBooksStore().confirmImport(preview.id);
+  render(createElement(BooksApp));
+  await screen.findByRole("heading", { name: "Imported book" });
+  fireEvent.click(screen.getByRole("button", { name: /Needs classification/ }));
+  assert.equal(screen.getAllByRole("article").length, 1);
+  assert.equal(
+    screen.queryByRole("heading", { name: "Already classified" }),
+    null,
+  );
+  assert.equal(
+    screen.queryByRole("region", { name: "Library statistics" }),
+    null,
+  );
+  globalThis.fetch = async (url, init) =>
+    init?.method === "PATCH"
+      ? Response.json({ error: "Try saving again" }, { status: 500 })
+      : apiFetch(url, init);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Mark Imported book as fiction" }),
+  );
+  await screen.findByRole("alert");
+  assert.ok(screen.getByRole("heading", { name: "Imported book" }));
+  assert.match(
+    screen.getByRole("button", { name: /Needs classification/ }).textContent,
+    /1$/,
+  );
+  globalThis.fetch = apiFetch;
+  fireEvent.click(
+    screen.getByRole("button", { name: "Mark Imported book as nonfiction" }),
+  );
+  await screen.findByRole("heading", { name: "All books classified" });
+  assert.match(
+    screen.getByRole("button", { name: /Needs classification/ }).textContent,
+    /0$/,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "View all books" }));
+  assert.equal(screen.getAllByRole("article").length, 2);
+  assert.equal(
+    screen.getByRole("combobox", { name: "Type for Imported book" }).value,
+    "Nonfiction",
+  );
+  cleanup();
+  render(createElement(BooksApp));
+  await screen.findByRole("heading", { name: "Imported book" });
+  fireEvent.click(screen.getByRole("button", { name: /Needs classification/ }));
+  assert.ok(screen.getByRole("heading", { name: "All books classified" }));
 });

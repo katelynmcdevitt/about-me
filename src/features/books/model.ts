@@ -2,6 +2,7 @@ import Papa from "papaparse";
 import { GOOGLE_SHEET_GIDS } from "./sheet";
 
 export type Book = {
+  goodreadsId?: string;
   id: string;
   title: string;
   author: string;
