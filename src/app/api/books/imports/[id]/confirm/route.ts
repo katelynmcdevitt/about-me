@@ -12,9 +12,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    await readJson(request);
+    const body = (await readJson(request)) as { version?: number } | null;
     const { id } = await params;
-    return Response.json(getBooksStore().confirmImport(id), {
+    return Response.json(getBooksStore().confirmImport(id, body?.version), {
       headers: noCache,
     });
   } catch (error) {

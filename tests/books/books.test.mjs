@@ -64,6 +64,9 @@ const { GET: libraryGet, PATCH: libraryPatch } = await loadFile(
 const { POST: previewPost } = await loadFile(
   new URL("../../src/app/api/books/imports/route.ts", import.meta.url),
 );
+const { PATCH: resolvePatch } = await loadFile(
+  new URL("../../src/app/api/books/imports/[id]/route.ts", import.meta.url),
+);
 const { POST: confirmPost } = await loadFile(
   new URL(
     "../../src/app/api/books/imports/[id]/confirm/route.ts",
@@ -80,6 +83,11 @@ const apiFetch = async (url, init = {}) => {
   if (path === "/api/books/library")
     return init.method === "PATCH" ? libraryPatch(request) : libraryGet();
   if (path === "/api/books/imports") return previewPost(request);
+  const resolution = path.match(/^\/api\/books\/imports\/([^/]+)$/);
+  if (resolution)
+    return resolvePatch(request, {
+      params: Promise.resolve({ id: resolution[1] }),
+    });
   const confirm = path.match(/^\/api\/books\/imports\/([^/]+)\/confirm$/);
   if (confirm)
     return confirmPost(request, {
@@ -607,4 +615,385 @@ test("classification view shows only unclear books, retains failures, and remove
   await screen.findByRole("heading", { name: "Imported book" });
   fireEvent.click(screen.getByRole("button", { name: /Needs classification/ }));
   assert.ok(screen.getByRole("heading", { name: "All books classified" }));
+});
+
+test("book details saves corrections, records rereads, and retains both after reloading", async () => {
+  globalThis.fetch = apiFetch;
+  await seed();
+  render(createElement(BooksApp));
+  await screen.findByRole("heading", { name: "Imported book" });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Imported book", exact: true }),
+  );
+  let panel = within(
+    await screen.findByRole("dialog", { name: "Book details" }),
+  );
+  fireEvent.change(panel.getByLabelText("Title"), {
+    target: { value: "Corrected book" },
+  });
+  fireEvent.change(panel.getByLabelText("Author"), {
+    target: { value: "Corrected writer" },
+  });
+  fireEvent.change(panel.getByLabelText("Pages"), { target: { value: "250" } });
+  fireEvent.change(panel.getByLabelText("Publication year"), {
+    target: { value: "2020" },
+  });
+  fireEvent.change(panel.getByLabelText("Rating"), {
+    target: { value: "4.75" },
+  });
+  fireEvent.change(panel.getByLabelText("Reading format"), {
+    target: { value: "Kindle" },
+  });
+  fireEvent.change(panel.getByLabelText("Category"), {
+    target: { value: "New category" },
+  });
+  fireEvent.change(panel.getByLabelText("Tags"), {
+    target: { value: "Favorite, Revisit" },
+  });
+  fireEvent.click(panel.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => assert.ok(screen.queryByRole("dialog") === null));
+  assert.ok(screen.getByRole("heading", { name: "Corrected book" }));
+  let library = getBooksStore().getLibrary();
+  assert.equal(library.books[0].rating, 4.75);
+  assert.equal(library.books[0].pages, 250);
+  assert.equal(library.books[0].format, "Kindle");
+  assert.deepEqual(library.books[0].tags, ["Favorite", "Revisit"]);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Corrected book", exact: true }),
+  );
+  panel = within(await screen.findByRole("dialog", { name: "Book details" }));
+  fireEvent.click(panel.getByRole("button", { name: "Record a reread" }));
+  panel = within(screen.getByRole("dialog", { name: "Record a reread" }));
+  fireEvent.change(panel.getByLabelText("Finished date"), {
+    target: { value: "2025-06" },
+  });
+  fireEvent.change(panel.getByLabelText("Rating"), {
+    target: { value: "3.5" },
+  });
+  fireEvent.click(panel.getByRole("button", { name: "Save reread" }));
+  await waitFor(() => assert.ok(screen.queryByRole("dialog") === null));
+  library = getBooksStore().getLibrary();
+  assert.equal(library.books.length, 2);
+  assert.ok(
+    library.books.some(
+      (book) => book.dateRead === "2025-06" && book.rating === 3.5,
+    ),
+  );
+  cleanup();
+  render(createElement(BooksApp));
+  await waitFor(() => assert.equal(screen.getAllByRole("article").length, 2));
+  assert.ok(
+    getBooksStore()
+      .getLibrary()
+      .books.every((book) => book.title === "Corrected book"),
+  );
+});
+
+test("cancel and failed detail saves retain the stored data and keep editable drafts", async () => {
+  globalThis.fetch = apiFetch;
+  await seed();
+  render(createElement(BooksApp));
+  await screen.findByRole("heading", { name: "Imported book" });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Imported book", exact: true }),
+  );
+  let panel = within(
+    await screen.findByRole("dialog", { name: "Book details" }),
+  );
+  fireEvent.change(panel.getByLabelText("Title"), {
+    target: { value: "Unsaved" },
+  });
+  fireEvent.click(panel.getByRole("button", { name: "Cancel" }));
+  assert.equal(screen.queryByRole("dialog"), null);
+  assert.equal(getBooksStore().getLibrary().books[0].title, "Imported book");
+  fireEvent.click(
+    screen.getByRole("button", { name: "Imported book", exact: true }),
+  );
+  panel = within(await screen.findByRole("dialog", { name: "Book details" }));
+  fireEvent.change(panel.getByLabelText("Title"), {
+    target: { value: "Keep this draft" },
+  });
+  globalThis.fetch = async (url, init) =>
+    init?.method === "PATCH"
+      ? Response.json({ error: "Save failed" }, { status: 500 })
+      : apiFetch(url, init);
+  fireEvent.click(panel.getByRole("button", { name: "Save changes" }));
+  await panel.findByRole("alert");
+  assert.equal(panel.getByLabelText("Title").value, "Keep this draft");
+  assert.equal(getBooksStore().getLibrary().books[0].title, "Imported book");
+});
+
+test("import preview resolves a conflicting match, preserves annotations, and confirms the reviewed result", async () => {
+  globalThis.fetch = apiFetch;
+  const library = await seed();
+  getBooksStore().updateEntry(
+    library.books[0].id,
+    { tags: ["Keep annotation"], kind: "Nonfiction" },
+    library.revision,
+  );
+  render(createElement(BooksApp));
+  await screen.findByRole("heading", { name: "Imported book" });
+  const csv =
+    "Book Id,Title,Author,Exclusive Shelf,Date Read,My Rating\n456,Imported book,Writer,read,2026/10/01,5";
+  fireEvent.change(screen.getByLabelText("Import CSV"), {
+    target: { files: [uploadFile(csv)] },
+  });
+  const panel = within(
+    await screen.findByRole("dialog", { name: "Review your import" }),
+  );
+  assert.ok(panel.getByRole("button", { name: "Confirm import" }).disabled);
+  fireEvent.click(
+    panel.getByRole("button", { name: "Match row 2 to existing book" }),
+  );
+  await waitFor(() =>
+    assert.equal(
+      panel
+        .getByRole("button", { name: "Match row 2 to existing book" })
+        .getAttribute("aria-pressed"),
+      "true",
+    ),
+  );
+  assert.ok(!panel.getByRole("button", { name: "Confirm import" }).disabled);
+  assert.equal(getBooksStore().getLibrary().books[0].rating, 4.5);
+  fireEvent.click(panel.getByRole("button", { name: "Confirm import" }));
+  await waitFor(() => assert.ok(screen.queryByRole("dialog") === null));
+  const saved = getBooksStore().getLibrary();
+  assert.equal(saved.books.length, 1);
+  assert.equal(saved.books[0].rating, 5);
+  assert.equal(saved.books[0].goodreadsId, "123");
+  assert.equal(saved.books[0].kind, "Nonfiction");
+  assert.deepEqual(saved.books[0].tags, ["Keep annotation"]);
+});
+
+test("every uncertain row remains accessible through preview pagination, including rows beyond 100", async () => {
+  globalThis.fetch = apiFetch;
+  await seed();
+  render(createElement(BooksApp));
+  await screen.findByRole("heading", { name: "Imported book" });
+  const csv =
+    "Book Id,Title,Author,Exclusive Shelf\n" +
+    Array.from(
+      { length: 101 },
+      (_, i) => `${1000 + i},Imported book,Writer,read`,
+    ).join("\n");
+  fireEvent.change(screen.getByLabelText("Import CSV"), {
+    target: { files: [uploadFile(csv)] },
+  });
+  const panel = within(
+    await screen.findByRole("dialog", { name: "Review your import" }),
+  );
+  fireEvent.click(panel.getByRole("button", { name: "Next rows" }));
+  fireEvent.click(panel.getByRole("button", { name: "Next rows" }));
+  assert.ok(panel.getByRole("button", { name: "Skip row 102" }));
+  fireEvent.click(panel.getByRole("button", { name: "Skip row 102" }));
+  await waitFor(() =>
+    assert.equal(
+      panel
+        .getByRole("button", { name: "Skip row 102" })
+        .getAttribute("aria-pressed"),
+      "true",
+    ),
+  );
+  assert.ok(panel.getByText("100 need review"));
+  assert.equal(getBooksStore().getLibrary().books.length, 1);
+});
+
+test("CSV format labels in categories and shelves populate both reading-format charts", async () => {
+  const row = (values) =>
+    bookFromRow({
+      Title: "Book",
+      Author: "Writer",
+      "Exclusive Shelf": "read",
+      ...values,
+    });
+  assert.equal(row({ Bookshelves: "read, audio" }).format, "Audio");
+  assert.equal(row({ Category: "Kindle" }).format, "Kindle");
+  assert.equal(row({ Category: "Physical" }).format, "Physical");
+  assert.equal(row({ Category: "Audio", Format: "Kindle" }).format, "Kindle");
+  assert.equal(
+    row({ Category: "Audio", Bookshelves: "Kindle" }).format,
+    "Unclear",
+  );
+  for (const provider of ["Everand", "Libby", "Audible"]) {
+    assert.equal(row({ Category: provider }).format, "Audio");
+    assert.equal(row({ Bookshelves: provider.toLowerCase() }).format, "Audio");
+    assert.equal(row({ Format: provider }).format, "Audio");
+  }
+  assert.equal(row({ Category: "Libby", Format: "Kindle" }).format, "Kindle");
+  const preview = getBooksStore().previewImport({
+    source: "goodreads",
+    filename: "shelves.csv",
+    csv: "Title,Author,Exclusive Shelf,Date Read,Bookshelves\nAudio title,Writer,read,2026/01/01,audio\nPhysical title,Writer,read,2026/01/02,physical\nKindle title,Writer,read,2026/01/03,kindle",
+  });
+  getBooksStore().confirmImport(preview.id);
+  globalThis.fetch = apiFetch;
+  render(createElement(BooksApp));
+  await screen.findByRole("heading", { name: "Audio title" });
+  const chart = within(
+    screen.getByRole("region", { name: "Audio, physical & Kindle" }),
+  );
+  assert.ok(
+    chart.getByRole("img", {
+      name: "Overall: 33% audio, 33% physical, 34% Kindle, 0 unclear",
+    }),
+  );
+  assert.ok(
+    chart.getByRole("img", {
+      name: "2026: 33% audio, 33% physical, 34% Kindle, 0 unclear",
+    }),
+  );
+  assert.equal(chart.getAllByRole("img")[0].querySelectorAll("span").length, 3);
+});
+
+test("reading format queue saves all three choices, keeps failed saves, and stays complete after reload", async () => {
+  globalThis.fetch = apiFetch;
+  await seed();
+  const preview = getBooksStore().previewImport({
+    source: "goodreads",
+    filename: "formats-queue.csv",
+    csv: "Title,Author,Exclusive Shelf,Format\nNeeds print,Writer,read,\nNeeds ebook,Writer,read,\nKnown book,Writer,read,Audio",
+  });
+  getBooksStore().confirmImport(preview.id);
+  render(createElement(BooksApp));
+  await screen.findByRole("heading", { name: "Imported book" });
+  fireEvent.click(screen.getByRole("button", { name: /Needs reading format/ }));
+  assert.equal(screen.getAllByRole("article").length, 3);
+  assert.ok(!screen.queryByRole("heading", { name: "Known book" }));
+  globalThis.fetch = async (url, init) =>
+    init?.method === "PATCH"
+      ? Response.json({ error: "Format save failed" }, { status: 500 })
+      : apiFetch(url, init);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Mark Imported book as audio" }),
+  );
+  await screen.findByRole("alert");
+  assert.ok(screen.getByRole("heading", { name: "Imported book" }));
+  globalThis.fetch = apiFetch;
+  fireEvent.click(
+    screen.getByRole("button", { name: "Mark Imported book as audio" }),
+  );
+  await waitFor(() =>
+    assert.ok(!screen.queryByRole("heading", { name: "Imported book" })),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Mark Needs print as physical" }),
+  );
+  await waitFor(() =>
+    assert.ok(!screen.queryByRole("heading", { name: "Needs print" })),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Mark Needs ebook as kindle" }),
+  );
+  await screen.findByRole("heading", { name: "All reading formats set" });
+  assert.match(
+    screen.getByRole("button", { name: /Needs reading format/ }).textContent,
+    /0$/,
+  );
+  const saved = getBooksStore().getLibrary().books;
+  assert.equal(
+    saved.find((book) => book.title === "Imported book").format,
+    "Audio",
+  );
+  assert.equal(
+    saved.find((book) => book.title === "Needs print").format,
+    "Physical",
+  );
+  assert.equal(
+    saved.find((book) => book.title === "Needs ebook").format,
+    "Kindle",
+  );
+  cleanup();
+  render(createElement(BooksApp));
+  await screen.findByRole("heading", { name: "Imported book" });
+  fireEvent.click(screen.getByRole("button", { name: /Needs reading format/ }));
+  assert.ok(screen.getByRole("heading", { name: "All reading formats set" }));
+});
+
+test("yearly dashboard changes years, reports missing data, and links to the format queue", async () => {
+  globalThis.fetch = apiFetch;
+  const preview = getBooksStore().previewImport({
+    source: "goodreads",
+    filename: "dashboard.csv",
+    csv: "Title,Author,Exclusive Shelf,Date Read,My Rating,Number of Pages,Format\nJanuary book,Writer,read,2026/01/01,4,100,Audio\nFebruary book,Writer,read,2026/02,0,,\nEarlier book,Writer,read,2025/03/01,5,300,Kindle\nUndated book,Writer,read,,3,900,Physical",
+  });
+  getBooksStore().confirmImport(preview.id);
+  render(createElement(BooksApp));
+  await screen.findByRole("heading", { name: "January book" });
+  fireEvent.click(screen.getByRole("button", { name: "Yearly reading" }));
+  const dashboard = within(
+    screen.getByRole("region", { name: "Yearly reading" }),
+  );
+  assert.equal(
+    dashboard.getByRole("combobox", { name: "Dashboard year" }).value,
+    "2026",
+  );
+  assert.ok(
+    within(
+      dashboard.getByRole("article", { name: "Books finished" }),
+    ).getByText("2"),
+  );
+  assert.ok(
+    within(dashboard.getByRole("article", { name: "Pages read" })).getByText(
+      "100",
+    ),
+  );
+  assert.ok(
+    within(
+      dashboard.getByRole("article", { name: "Average rating" }),
+    ).getByText("4.0"),
+  );
+  assert.ok(dashboard.getByRole("listitem", { name: "Jan: 1 book" }));
+  assert.ok(dashboard.getByText(/1 reading has no known finish date/));
+  fireEvent.change(
+    dashboard.getByRole("combobox", { name: "Dashboard year" }),
+    { target: { value: "2025" } },
+  );
+  assert.ok(
+    within(dashboard.getByRole("article", { name: "Pages read" })).getByText(
+      "300",
+    ),
+  );
+  assert.ok(
+    within(
+      dashboard.getByRole("article", { name: "Average rating" }),
+    ).getByText("5.0"),
+  );
+  fireEvent.click(
+    dashboard.getByRole("button", {
+      name: /Set missing formats across your library/,
+    }),
+  );
+  assert.ok(screen.getByRole("heading", { name: "February book" }));
+  assert.equal(screen.getAllByRole("article").length, 1);
+});
+
+test("yearly dashboard handles an empty library without implying that undated books belong to a year", async () => {
+  globalThis.fetch = apiFetch;
+  render(createElement(BooksApp));
+  await screen.findByRole("heading", { name: "No books yet" });
+  await waitFor(() =>
+    assert.ok(
+      !screen
+        .getByRole("button", { name: "Yearly reading" })
+        .closest("fieldset").disabled,
+    ),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Yearly reading" }));
+  const dashboard = within(
+    screen.getByRole("region", { name: "Yearly reading" }),
+  );
+  assert.ok(
+    dashboard.getByRole("combobox", { name: "Dashboard year" }).disabled,
+  );
+  assert.ok(dashboard.getByText(/No finished dates yet/));
+  assert.ok(
+    within(
+      dashboard.getByRole("article", { name: "Books finished" }),
+    ).getByText("0"),
+  );
+  assert.ok(
+    within(
+      dashboard.getByRole("article", { name: "Average rating" }),
+    ).getByText("—"),
+  );
 });

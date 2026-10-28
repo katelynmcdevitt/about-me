@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type {
   EntryChanges,
+  ImportDecision,
   ImportInput,
   ImportPreview,
   Library,
@@ -87,15 +88,32 @@ export function useLibrary() {
       setBusy(false);
     }
   }
-  async function saveEntry(id: string, changes: EntryChanges) {
+  async function saveEntry(
+    id: string,
+    changes: EntryChanges,
+    revision = libraryRef.current.revision,
+  ) {
     const result = await perform<Library>(
       "/api/books/library",
       {
         action: "updateEntry",
         id,
         changes,
-        revision: libraryRef.current.revision,
+        revision,
       },
+      "PATCH",
+    );
+    if (result) setLibrary(result);
+    return !!result;
+  }
+  async function addReading(
+    id: string,
+    changes: EntryChanges,
+    revision: number,
+  ) {
+    const result = await perform<Library>(
+      "/api/books/library",
+      { action: "addReading", id, changes, revision },
       "PATCH",
     );
     if (result) setLibrary(result);
@@ -114,11 +132,20 @@ export function useLibrary() {
     const result = await perform<ImportPreview>("/api/books/imports", input);
     if (result) setPreview(result);
   }
+  async function resolveImport(decision: ImportDecision) {
+    if (!preview) return;
+    const result = await perform<ImportPreview>(
+      `/api/books/imports/${preview.id}`,
+      { decision, version: preview.version },
+      "PATCH",
+    );
+    if (result) setPreview(result);
+  }
   async function confirmImport() {
     if (!preview) return false;
     const result = await perform<Library>(
       `/api/books/imports/${preview.id}/confirm`,
-      {},
+      { version: preview.version },
     );
     if (result) {
       setLibrary(result);
@@ -135,8 +162,10 @@ export function useLibrary() {
     preview,
     setPreview,
     saveEntry,
+    addReading,
     addCategory,
     previewInput,
     confirmImport,
+    resolveImport,
   };
 }

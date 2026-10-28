@@ -68,7 +68,13 @@ export default function PlannerSidebar({ p }: { p: PlannerState }) {
       </Link>
       <div className="local-note" role="status">
         <span />
-        {p.storageError ? "Not saved" : "Saved on this device"}
+        {!p.loaded
+          ? "Loading plan…"
+          : p.busy
+            ? "Saving…"
+            : p.storageError
+              ? "Save failed"
+              : "Saved locally"}
       </div>
     </aside>
   );

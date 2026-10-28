@@ -25,13 +25,15 @@ export async function PATCH(request: Request) {
       throw new LibraryError("Invalid library edit.");
     const store = getBooksStore();
     if (
-      body.action === "updateEntry" &&
+      (body.action === "updateEntry" || body.action === "addReading") &&
       typeof body.id === "string" &&
       body.changes &&
       typeof body.revision === "number"
     )
       return Response.json(
-        store.updateEntry(body.id, body.changes, body.revision),
+        body.action === "addReading"
+          ? store.addReading(body.id, body.changes, body.revision)
+          : store.updateEntry(body.id, body.changes, body.revision),
         { headers: noCache },
       );
     if (

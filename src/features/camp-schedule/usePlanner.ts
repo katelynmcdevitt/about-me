@@ -1,22 +1,44 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { derivePlan, loadSeason, parseSavedPlan } from "./model";
 import general from "./data/general.json";
 import type { Camp } from "./types";
+import type { CampCommand, CampSeason } from "./contracts";
 
+type CampMutation = CampCommand extends infer T
+  ? T extends CampCommand
+    ? Omit<T, "revision">
+    : never
+  : never;
+async function readResponse<T>(response: Response): Promise<T> {
+  const data = await response.json();
+  if (!response.ok)
+    throw new Error(data.error || "Could not load or save the camp plan.");
+  return data as T;
+}
 export function usePlanner(seasonYear: number) {
-  const [initial] = useState(() => {
-    let storage: Storage | undefined;
-    try {
-      storage = window.localStorage;
-    } catch {}
-    return loadSeason(seasonYear, storage);
-  });
+  const [initial] = useState(() => loadSeason(seasonYear));
   const { season, seasonStart, defaultCampEnd, totalCamperWeeks, storageKey } =
     initial;
-  const [camps, setCamps] = useState(initial.camps);
-  const [kids, setKids] = useState(initial.kids);
-  const [handoffBuffer, setHandoffBuffer] = useState(initial.handoffBuffer);
-  const [appliedImports, setAppliedImports] = useState(initial.appliedImports);
+  const [snapshot, setSnapshot] = useState<CampSeason | null>(null);
+  const current = snapshot ?? {
+    year: seasonYear,
+    camps: [],
+    kids: initial.kids,
+    handoffBuffer: initial.handoffBuffer,
+    appliedImports: [],
+    revision: 0,
+    browserMigrated: false,
+  };
+  const { camps, kids, handoffBuffer } = current;
+  const snapshotRef = useRef(current);
+  snapshotRef.current = current;
+  const pending = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const [requestError, setRequestError] = useState("");
+  const [settingsKids, setKids] = useState(initial.kids);
+  const [settingsHandoffBuffer, setHandoffBuffer] = useState(
+    initial.handoffBuffer,
+  );
   const [calendarView, setCalendarView] = useState<"month" | "week">("week");
   const [selectedWeek, setSelectedWeek] = useState(season.coverageStart);
   const [tab, setTab] = useState("Overview");
@@ -25,11 +47,19 @@ export function usePlanner(seasonYear: number) {
   const [year, setYear] = useState(season.year);
   const [missingOpen, setMissingOpen] = useState(false);
   const [modal, setModal] = useState(false);
-  const [settings, setSettings] = useState(false);
+  const [settings, setSettingsOpen] = useState(false);
   const [editing, setEditing] = useState("");
+  const [editRevision, setEditRevision] = useState(0);
   const [error, setError] = useState("");
-  const [storageError, setStorageError] = useState(false);
   const [importMessage, setImportMessage] = useState("");
+  const [legacyPlan, setLegacyPlan] = useState<unknown>(() => {
+    try {
+      const stored = localStorage.getItem(storageKey);
+      return stored ? { ...JSON.parse(stored), year: seasonYear } : null;
+    } catch {
+      return null;
+    }
+  });
   const blank = (): Omit<Camp, "id"> => ({
     ...general.newCamp,
     name: "",
@@ -39,19 +69,87 @@ export function usePlanner(seasonYear: number) {
     location: "",
   });
   const [form, setForm] = useState(blank);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        storageKey,
-        JSON.stringify({ camps, kids, handoffBuffer, appliedImports }),
-      );
-      setStorageError(false);
-    } catch {
-      setStorageError(true);
+  const path = `/api/camp-schedule/${seasonYear}`;
+  function apply(data: CampSeason, resetDrafts = true) {
+    setSnapshot(data);
+    if (resetDrafts) {
+      setKids(data.kids);
+      setHandoffBuffer(data.handoffBuffer);
     }
-  }, [storageKey, camps, kids, handoffBuffer, appliedImports]);
-
+  }
+  useEffect(() => {
+    let active = true;
+    fetch(path, { cache: "no-store" })
+      .then(readResponse<CampSeason>)
+      .then((data) => {
+        if (active) apply(data);
+      })
+      .catch((cause) => {
+        if (active)
+          setRequestError(
+            cause instanceof Error
+              ? cause.message
+              : "Could not load this summer.",
+          );
+      });
+    return () => {
+      active = false;
+    };
+  }, [path]);
+  async function reload() {
+    try {
+      apply(
+        await readResponse<CampSeason>(
+          await fetch(path, { cache: "no-store" }),
+        ),
+      );
+      setRequestError("");
+    } catch (cause) {
+      setRequestError(
+        cause instanceof Error ? cause.message : "Could not load this summer.",
+      );
+    }
+  }
+  async function mutate(
+    command: CampMutation,
+    revision = snapshotRef.current.revision,
+  ): Promise<boolean> {
+    if (pending.current || !snapshot) return false;
+    pending.current = true;
+    setBusy(true);
+    setRequestError("");
+    setError("");
+    try {
+      const response = await fetch(path, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...command, revision }),
+      });
+      if (response.status === 409) {
+        const cause = await response.json();
+        apply(
+          await readResponse<CampSeason>(
+            await fetch(path, { cache: "no-store" }),
+          ),
+          false,
+        );
+        throw new Error(
+          `${cause.error} Close and reopen any editor before saving its draft.`,
+        );
+      }
+      apply(await readResponse<CampSeason>(response));
+      return true;
+    } catch (cause) {
+      const message =
+        cause instanceof Error ? cause.message : "Could not save this change.";
+      setError(message);
+      setRequestError(message);
+      return false;
+    } finally {
+      pending.current = false;
+      setBusy(false);
+    }
+  }
   const derived = derivePlan(
     camps,
     kids,
@@ -72,12 +170,35 @@ export function usePlanner(seasonYear: number) {
     if (owner.cost == null) return "Cost needed";
     return owner.paid ? "Paid" : "Unpaid";
   };
-  const togglePaid = (camp: Camp) => {
-    const id = paymentOwner(camp).id;
-    setCamps((previous) =>
-      previous.map((c) => (c.id === id ? { ...c, paid: !c.paid } : c)),
-    );
+  const togglePaid = (camp: Camp) =>
+    mutate({ action: "togglePaid", id: camp.id });
+  const setSettings = (open: boolean) => {
+    if (busy) return;
+    setKids(snapshotRef.current.kids);
+    setHandoffBuffer(snapshotRef.current.handoffBuffer);
+    setError("");
+    setRequestError("");
+    setEditRevision(snapshotRef.current.revision);
+    setSettingsOpen(open);
   };
+  async function saveSettings(close = true) {
+    if (
+      !close &&
+      JSON.stringify(settingsKids) === JSON.stringify(kids) &&
+      settingsHandoffBuffer === handoffBuffer
+    )
+      return true;
+    const saved = await mutate(
+      {
+        action: "settings",
+        kids: settingsKids,
+        handoffBuffer: settingsHandoffBuffer,
+      },
+      close ? editRevision : snapshotRef.current.revision,
+    );
+    if (saved && close) setSettingsOpen(false);
+    return saved;
+  }
   const viewMissingWeek = (start: string, kid: number) => {
     setSelectedWeek(start);
     setFilter(kid);
@@ -102,48 +223,38 @@ export function usePlanner(seasonYear: number) {
     setEditing(camp?.id ?? "");
     setForm(camp ? { ...camp } : blank());
     setError("");
+    setRequestError("");
+    setEditRevision(snapshotRef.current.revision);
     setModal(true);
   };
-  const save = () => {
+  const save = async () => {
     if (!form.name.trim() || !form.start || !form.end) {
       setError("Add a camp name and both dates.");
-      return;
+      return false;
     }
-    if (
-      !form.start.startsWith(`${season.year}-`) ||
-      !form.end.startsWith(`${season.year}-`)
-    ) {
-      setError(`Use dates in ${season.year}, or select another year.`);
-      return;
-    }
-    if (form.end < form.start) {
-      setError("The end date must be on or after the start date.");
-      return;
-    }
-    if (form.dropoff && form.pickup && form.pickup <= form.dropoff) {
-      setError("Pickup must be after drop-off.");
-      return;
-    }
-    if (form.cost != null && (!Number.isFinite(form.cost) || form.cost < 0)) {
-      setError("Enter a valid cost.");
-      return;
-    }
-    const camp: Camp = {
-      ...form,
-      cost: typeof form.cost === "number" ? form.cost : null,
-      name: form.name.trim(),
-      id: editing || crypto.randomUUID(),
-    };
-    setCamps((previous) =>
-      editing
-        ? previous.map((c) => (c.id === editing ? camp : c))
-        : [...previous, camp],
+    const saved = await mutate(
+      {
+        action: "saveCamp",
+        editing: !!editing,
+        camp: {
+          ...form,
+          name: form.name.trim(),
+          id: editing || crypto.randomUUID(),
+          cost: typeof form.cost === "number" ? form.cost : null,
+        },
+      },
+      editRevision,
     );
-    setModal(false);
+    if (saved) setModal(false);
+    return saved;
   };
-  const remove = () => {
-    setCamps((previous) => previous.filter((c) => c.id !== editing));
-    setModal(false);
+  const remove = async () => {
+    const saved = await mutate(
+      { action: "deleteCamp", id: editing },
+      editRevision,
+    );
+    if (saved) setModal(false);
+    return saved;
   };
   const move = (offset: number) => {
     const date = new Date(year, month + offset);
@@ -151,12 +262,17 @@ export function usePlanner(seasonYear: number) {
     setMonth(date.getMonth());
   };
   const exportData = () => {
-    const anchor = document.createElement("a");
     const url = URL.createObjectURL(
       new Blob(
         [
           JSON.stringify(
-            { year: season.year, kids, camps, handoffBuffer },
+            {
+              year: season.year,
+              kids,
+              camps,
+              handoffBuffer,
+              appliedImports: current.appliedImports,
+            },
             null,
             2,
           ),
@@ -164,6 +280,7 @@ export function usePlanner(seasonYear: number) {
         { type: "application/json" },
       ),
     );
+    const anchor = document.createElement("a");
     anchor.href = url;
     anchor.download = `camp-days-${season.year}-backup.json`;
     anchor.click();
@@ -171,43 +288,50 @@ export function usePlanner(seasonYear: number) {
   };
   const importData = async (file: File) => {
     try {
+      if (file.size > 4 * 1024 * 1024)
+        throw new Error("Choose a backup smaller than 4 MB.");
       const raw = JSON.parse(await file.text());
-      const plan = parseSavedPlan(raw);
-      if (
-        raw.year !== season.year ||
-        plan.camps.some(
-          (c) =>
-            !c.start.startsWith(`${season.year}-`) ||
-            !c.end.startsWith(`${season.year}-`),
-        )
-      )
+      parseSavedPlan(raw);
+      if (raw.year !== seasonYear)
         throw new Error(
           `Select Summer ${raw.year ?? "matching the backup"} before importing this file.`,
         );
       if (
         !window.confirm(
-          `Replace the ${season.year} plan on this device with this backup? Export first to keep the current plan.`,
+          `Replace the ${seasonYear} database plan with this backup? Export the current plan first to keep it.`,
         )
       )
         return;
-      // Treat imported backups as authoritative, including deleted supplied entries.
-      const imports =
-        season.year === general.season.year
-          ? ["owen-2026-v1", "handoff-times-2026-v1"]
-          : [];
-      const loaded = loadSeason(season.year, {
-        getItem: () => JSON.stringify({ ...plan, appliedImports: imports }),
-      });
-      setCamps(loaded.camps);
-      setKids(loaded.kids);
-      setHandoffBuffer(loaded.handoffBuffer);
-      setAppliedImports(loaded.appliedImports);
-      setImportMessage(
-        `Imported ${plan.camps.length} camps for ${season.year}.`,
-      );
+      if (await mutate({ action: "restore", plan: raw }))
+        setImportMessage(
+          `Imported ${raw.camps.length} camps for ${seasonYear}.`,
+        );
     } catch (cause) {
       setImportMessage(
         cause instanceof Error ? cause.message : "Could not read this backup.",
+      );
+    }
+  };
+  const migrateBrowser = async () => {
+    try {
+      const legacy = parseSavedPlan(legacyPlan);
+      if (
+        !window.confirm(
+          `Replace the ${seasonYear} database plan (${camps.length} camps) with this browser's saved plan (${legacy.camps.length} camps)? Export the database plan first to keep it.`,
+        )
+      )
+        return;
+      if (await mutate({ action: "migrateBrowser", plan: legacyPlan })) {
+        setLegacyPlan(null);
+        setImportMessage(
+          `Migrated browser plan for ${seasonYear}. The old browser save is unchanged.`,
+        );
+      }
+    } catch (cause) {
+      setRequestError(
+        cause instanceof Error
+          ? cause.message
+          : "Could not migrate this browser plan.",
       );
     }
   };
@@ -218,8 +342,10 @@ export function usePlanner(seasonYear: number) {
     camps,
     kids,
     handoffBuffer,
-    setHandoffBuffer,
     setKids,
+    setHandoffBuffer,
+    settingsKids,
+    settingsHandoffBuffer,
     calendarView,
     setCalendarView,
     selectedWeek,
@@ -235,7 +361,11 @@ export function usePlanner(seasonYear: number) {
     setSettings,
     editing,
     error,
-    storageError,
+    requestError,
+    storageError: !!requestError,
+    busy,
+    loaded: !!snapshot,
+    reload,
     form,
     setForm,
     hasSeparateCost,
@@ -252,6 +382,9 @@ export function usePlanner(seasonYear: number) {
     exportData,
     importData,
     importMessage,
+    saveSettings,
+    hasBrowserPlan: legacyPlan !== null && !current.browserMigrated,
+    migrateBrowser,
   };
 }
 export type PlannerState = ReturnType<typeof usePlanner>;

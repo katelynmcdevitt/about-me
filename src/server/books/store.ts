@@ -3,17 +3,23 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { Book } from "../../features/books/model";
-import { normalizeIsbn, uncategorized } from "../../features/books/model";
+import {
+  inferReadingFormat,
+  normalizeIsbn,
+  uncategorized,
+} from "../../features/books/model";
 import type {
   EntryChanges,
   ImportHistory,
+  ImportDecision,
   ImportInput,
   ImportPreview,
   ImportRow,
   ImportSummary,
   Library,
 } from "../../features/books/contracts";
-import { parseImport } from "./import-file";
+import type { ParsedImport } from "./import-file";
+import { normalizedDate, parseImport } from "./import-file";
 import { LibraryError } from "./errors";
 
 type CatalogBook = {
@@ -27,6 +33,8 @@ type CatalogBook = {
 };
 type Reading = Book & { catalogId: string };
 type Plan = {
+  parsed?: ParsedImport;
+  decisions?: ImportDecision[];
   revision: number;
   catalog: CatalogBook[];
   entries: Reading[];
@@ -62,7 +70,7 @@ export class BooksStore {
     const version = Number(
       this.db.prepare("PRAGMA user_version").get()!.user_version,
     );
-    if (version > 1)
+    if (version > 3)
       throw new Error("This database was created by a newer app version.");
     if (version === 0)
       this.db.exec(`
@@ -82,6 +90,61 @@ export class BooksStore {
       PRAGMA user_version=1;
       COMMIT;
     `);
+    if (version < 2)
+      this.transaction(() => {
+        let changed = false;
+        for (const row of this.db
+          .prepare(
+            "SELECT r.id,r.format,c.name AS category,r.shelves_json FROM reading_entries r JOIN categories c ON c.id=r.category_id",
+          )
+          .all()) {
+          const format = inferReadingFormat({
+            format: String(row.format),
+            category: String(row.category),
+            shelves: JSON.parse(String(row.shelves_json)),
+          });
+          if (format !== "Unclear" && format !== row.format) {
+            this.db
+              .prepare("UPDATE reading_entries SET format=? WHERE id=?")
+              .run(format, row.id);
+            changed = true;
+          }
+        }
+        if (changed) this.incrementRevision();
+        this.db.exec("PRAGMA user_version=2");
+      });
+    if (version < 3)
+      this.transaction(() => {
+        let changed = false;
+        const providers = new Set(["everand", "libby", "audible"]);
+        for (const row of this.db
+          .prepare(
+            "SELECT r.id,r.format,c.name AS category,r.shelves_json FROM reading_entries r JOIN categories c ON c.id=r.category_id",
+          )
+          .all()) {
+          const category = String(row.category);
+          const shelves: string[] = JSON.parse(String(row.shelves_json));
+          const providerCategory = providers.has(category.trim().toLowerCase());
+          const providerShelf = shelves.some((shelf) =>
+            providers.has(shelf.trim().toLowerCase()),
+          );
+          // This one-time category mapping is the user's requested correction.
+          // Subsequent manual format edits are left alone on future restarts.
+          const format = providerCategory
+            ? "Audio"
+            : row.format === "Unclear" && providerShelf
+              ? inferReadingFormat({ category, shelves })
+              : row.format;
+          if (format === "Audio" && row.format !== "Audio") {
+            this.db
+              .prepare("UPDATE reading_entries SET format='Audio' WHERE id=?")
+              .run(row.id);
+            changed = true;
+          }
+        }
+        if (changed) this.incrementRevision();
+        this.db.exec("PRAGMA user_version=3");
+      });
   }
   close() {
     this.db.close();
@@ -214,6 +277,17 @@ export class BooksStore {
     }
   }
   updateEntry(id: string, changes: EntryChanges, revision: number): Library {
+    return this.editReading(id, changes, revision, false);
+  }
+  addReading(id: string, changes: EntryChanges, revision: number): Library {
+    return this.editReading(id, changes, revision, true);
+  }
+  private editReading(
+    id: string,
+    changes: EntryChanges,
+    revision: number,
+    create: boolean,
+  ): Library {
     return this.transaction(() => {
       this.checkRevision(revision);
       const entry = this.readings().find((e) => e.id === id);
@@ -223,7 +297,20 @@ export class BooksStore {
         !changes ||
         typeof changes !== "object" ||
         Object.keys(changes).some(
-          (key) => !["category", "tags", "kind", "format"].includes(key),
+          (key) =>
+            ![
+              "category",
+              "tags",
+              "kind",
+              "format",
+              "title",
+              "author",
+              "isbn",
+              "year",
+              "pages",
+              "rating",
+              "dateRead",
+            ].includes(key),
         )
       )
         throw new LibraryError("Invalid library edit.");
@@ -246,7 +333,123 @@ export class BooksStore {
         !["Audio", "Physical", "Kindle", "Unclear"].includes(changes.format)
       )
         throw new LibraryError("Invalid reading format.");
-      const edited = { ...entry, ...changes };
+      const metadataFields = [
+        "title",
+        "author",
+        "isbn",
+        "year",
+        "pages",
+      ] as const;
+      if (create && metadataFields.some((key) => changes[key] !== undefined))
+        throw new LibraryError(
+          "Save shared book details separately before recording a reread.",
+        );
+      for (const [field, max] of [
+        ["title", 2000],
+        ["author", 1000],
+      ] as const) {
+        if (
+          changes[field] !== undefined &&
+          (typeof changes[field] !== "string" ||
+            !changes[field]!.trim() ||
+            changes[field]!.length > max)
+        )
+          throw new LibraryError(`Enter a ${field} of 1–${max} characters.`);
+      }
+      if (
+        changes.isbn !== undefined &&
+        (typeof changes.isbn !== "string" || changes.isbn.length > 100)
+      )
+        throw new LibraryError("Enter a valid ISBN or leave it blank.");
+      const isbn =
+        changes.isbn !== undefined ? normalizeIsbn(changes.isbn) : entry.isbn;
+      if (
+        changes.isbn !== undefined &&
+        isbn &&
+        !/^(?:\d{13}|\d{9}[\dX])$/.test(isbn)
+      )
+        throw new LibraryError(
+          "ISBN must contain 10 or 13 digits, or be blank.",
+        );
+      if (
+        isbn &&
+        this.catalog().some(
+          (book) => book.id !== entry.catalogId && book.isbn === isbn,
+        )
+      )
+        throw new LibraryError(
+          "That ISBN already belongs to another book in your library.",
+        );
+      if (
+        changes.year !== undefined &&
+        changes.year !== null &&
+        (!Number.isInteger(changes.year) ||
+          changes.year < 1 ||
+          changes.year > 9999)
+      )
+        throw new LibraryError(
+          "Publication year must be between 1 and 9999, or blank.",
+        );
+      if (
+        changes.pages !== undefined &&
+        changes.pages !== null &&
+        (!Number.isInteger(changes.pages) ||
+          changes.pages < 1 ||
+          changes.pages > 1000000)
+      )
+        throw new LibraryError(
+          "Pages must be a positive whole number or blank.",
+        );
+      if (
+        changes.rating !== undefined &&
+        (typeof changes.rating !== "number" ||
+          !Number.isFinite(changes.rating) ||
+          changes.rating < 0 ||
+          changes.rating > 5)
+      )
+        throw new LibraryError("Rating must be between 0 and 5.");
+      if (
+        changes.dateRead !== undefined &&
+        (typeof changes.dateRead !== "string" ||
+          normalizedDate(changes.dateRead) === null)
+      )
+        throw new LibraryError(
+          "Use a valid finish date in YYYY-MM-DD or YYYY-MM format.",
+        );
+      const edited: Reading = {
+        ...entry,
+        ...(create ? { id: randomUUID(), dateRead: "", rating: 0 } : {}),
+        ...changes,
+        isbn,
+      };
+      edited.title = edited.title.trim();
+      edited.author = edited.author.trim();
+      edited.dateRead = normalizedDate(edited.dateRead)!;
+      if (create && !edited.dateRead)
+        throw new LibraryError("Add a finish date for the reread.");
+      if (
+        this.db
+          .prepare(
+            "SELECT id FROM reading_entries WHERE book_id=? AND date_read=? AND id<>?",
+          )
+          .get(entry.catalogId, edited.dateRead, edited.id)
+      )
+        throw new LibraryError(
+          "This book already has a reading with that finish date. Choose another date or edit the existing reading.",
+        );
+      if (!create)
+        this.db
+          .prepare(
+            "UPDATE books SET title=?,author=?,isbn=?,year=?,pages=? WHERE id=?",
+          )
+          .run(
+            edited.title,
+            edited.author,
+            edited.isbn,
+            edited.year,
+            edited.pages,
+            entry.catalogId,
+          );
       if (changes.category) edited.category = changes.category.trim();
       if (changes.tags)
         edited.tags = [
@@ -276,41 +479,112 @@ export class BooksStore {
   previewImport(input: ImportInput): ImportPreview {
     return this.transaction(() => this.buildPreview(input));
   }
-  private buildPreview(input: ImportInput): ImportPreview {
-    const parsed = parseImport(input);
+  private buildPreview(
+    input: ImportInput,
+    options?: {
+      parsed: ParsedImport;
+      decisions: ImportDecision[];
+      id: string;
+      version: number;
+    },
+  ): ImportPreview {
+    const parsed = options?.parsed ?? parseImport(input);
+    const decisions = options?.decisions ?? [];
+    const decisionMap = new Map(
+      decisions.map((decision) => [decision.row, decision]),
+    );
     const catalog = this.catalog(),
       entries = this.readings();
     const writes = new Map<string, Reading>(),
       catalogWrites = new Map<string, CatalogBook>();
     const rows: ImportRow[] = [...parsed.rows];
     const touched = new Set<string>();
-    for (const { book: incoming, row } of parsed.records) {
-      const isbn = normalizeIsbn(incoming.isbn);
-      const goodreadsId = incoming.goodreadsId ?? "";
+    const persistedIds = new Set(entries.map((entry) => entry.id));
+    for (const { book: sourceBook, row } of parsed.records) {
+      const incoming = { ...sourceBook };
+      const decision = decisionMap.get(row);
+      let isbn = normalizeIsbn(incoming.isbn);
+      let goodreadsId = incoming.goodreadsId ?? "";
+      let identifierNote = "";
       const direct = catalog.filter(
         (b) =>
           (isbn && b.isbn === isbn) ||
           (goodreadsId && b.goodreadsId === goodreadsId),
       );
-      const candidates = direct.length
+      let candidates = direct.length
         ? direct
         : catalog.filter(
             (b) =>
               identity(b.title, b.author) ===
               identity(incoming.title, incoming.author),
           );
+      const suggestions = entries
+        .filter(
+          (entry) =>
+            persistedIds.has(entry.id) &&
+            candidates.some((book) => book.id === entry.catalogId),
+        )
+        .map((entry) => entry.id);
+      const reviewInfo = () => ({
+        author: sourceBook.author,
+        isbn: sourceBook.isbn,
+        dateRead: sourceBook.dateRead,
+        suggestedEntryIds: suggestions,
+        ...(decision ? { decision } : {}),
+      });
+      if (decision?.action === "skip") {
+        rows.push({
+          row,
+          title: incoming.title,
+          action: "skipped",
+          detail: "You chose to skip this row.",
+          review: reviewInfo(),
+        });
+        continue;
+      }
+      let selected: Reading | undefined;
+      if (decision?.action === "match") {
+        selected = entries.find(
+          (entry) =>
+            persistedIds.has(entry.id) && entry.id === decision.entryId,
+        );
+        if (!selected)
+          throw new LibraryError(
+            "Choose an existing reading from your library.",
+          );
+        candidates = catalog.filter((book) => book.id === selected!.catalogId);
+      }
+      if (decision?.action === "new") {
+        const omitted: string[] = [];
+        if (isbn && catalog.some((book) => book.isbn === isbn)) {
+          isbn = "";
+          omitted.push("ISBN");
+        }
+        if (
+          goodreadsId &&
+          catalog.some((book) => book.goodreadsId === goodreadsId)
+        ) {
+          goodreadsId = "";
+          omitted.push("Goodreads ID");
+        }
+        if (omitted.length)
+          identifierNote = ` ${omitted.join(" and ")} already in use; the separate book will leave ${omitted.length === 1 ? "it" : "them"} blank.`;
+        candidates = [];
+      }
       if (
-        candidates.length > 1 ||
-        (candidates.length === 1 &&
-          ((isbn && candidates[0].isbn && isbn !== candidates[0].isbn) ||
-            (goodreadsId &&
-              candidates[0].goodreadsId &&
-              goodreadsId !== candidates[0].goodreadsId)))
+        !selected &&
+        (candidates.length > 1 ||
+          (candidates.length === 1 &&
+            ((isbn && candidates[0].isbn && isbn !== candidates[0].isbn) ||
+              (goodreadsId &&
+                candidates[0].goodreadsId &&
+                goodreadsId !== candidates[0].goodreadsId))))
       ) {
         rows.push({
           row,
           title: incoming.title,
           action: "ambiguous",
+          review: reviewInfo(),
           detail:
             "Conflicting editions or identifiers. Review this row before importing it separately.",
         });
@@ -331,7 +605,10 @@ export class BooksStore {
         catalogWrites.set(book.id, book);
       }
       const reads = entries.filter((e) => e.catalogId === book.id);
-      let previous = reads.find((e) => e.dateRead === incoming.dateRead);
+      let previous =
+        selected && !incoming.dateRead
+          ? selected
+          : reads.find((e) => e.dateRead === incoming.dateRead);
       if (
         !previous &&
         (!incoming.dateRead || (reads.length === 1 && !reads[0].dateRead))
@@ -342,6 +619,12 @@ export class BooksStore {
             row,
             title: incoming.title,
             action: "ambiguous",
+            review: {
+              ...reviewInfo(),
+              suggestedEntryIds: reads
+                .filter((entry) => persistedIds.has(entry.id))
+                .map((entry) => entry.id),
+            },
             detail:
               "This book has multiple reading dates; provide a finish date.",
           });
@@ -354,23 +637,27 @@ export class BooksStore {
           title: incoming.title,
           action: "skipped",
           detail: "Duplicate reading in this file.",
+          ...(decision ? { review: reviewInfo() } : {}),
         });
         continue;
       }
       const updatedBook = {
         ...book,
-        isbn: book.isbn || isbn,
-        goodreadsId: book.goodreadsId || goodreadsId,
-        year: incoming.year ?? book.year,
-        pages: incoming.pages ?? book.pages,
+        isbn: selected ? book.isbn : book.isbn || isbn,
+        goodreadsId: selected
+          ? book.goodreadsId
+          : book.goodreadsId || goodreadsId,
+        year: book.year ?? incoming.year,
+        pages: book.pages ?? incoming.pages,
       };
       if (JSON.stringify(updatedBook) !== JSON.stringify(book)) {
         Object.assign(book, updatedBook);
         catalogWrites.set(book.id, book);
       }
+      const annotations = previous ?? selected;
       const tags = [
         ...new Map(
-          [...(previous?.tags ?? []), ...incoming.tags].map((tag) => [
+          [...(annotations?.tags ?? []), ...incoming.tags].map((tag) => [
             tag.toLowerCase(),
             tag,
           ]),
@@ -392,8 +679,8 @@ export class BooksStore {
         dateRead: incoming.dateRead || previous?.dateRead || "",
         rating: incoming.rating || previous?.rating || 0,
         category:
-          previous?.category && previous.category !== uncategorized
-            ? previous.category
+          annotations?.category && annotations.category !== uncategorized
+            ? annotations.category
             : incoming.category,
         tags,
         format:
@@ -401,18 +688,19 @@ export class BooksStore {
             ? incoming.format
             : (previous?.format ?? "Unclear"),
         kind:
-          previous?.kindSource === "manual"
-            ? previous.kind
+          annotations?.kindSource === "manual"
+            ? annotations.kind
             : incoming.kind && incoming.kind !== "Unclear"
               ? incoming.kind
-              : (previous?.kind ?? "Unclear"),
+              : (annotations?.kind ?? "Unclear"),
         kindSource:
-          previous?.kindSource === "manual"
+          annotations?.kindSource === "manual"
             ? "manual"
             : incoming.kind && incoming.kind !== "Unclear"
               ? (incoming.kindSource ?? "")
-              : (previous?.kindSource ?? ""),
-        kindCheckedAt: previous?.kindCheckedAt ?? incoming.kindCheckedAt ?? 0,
+              : (annotations?.kindSource ?? ""),
+        kindCheckedAt:
+          annotations?.kindCheckedAt ?? incoming.kindCheckedAt ?? 0,
       };
       touched.add(entry.id);
       const unchanged =
@@ -430,14 +718,17 @@ export class BooksStore {
         row,
         title: incoming.title,
         action,
+        ...(decision ? { review: reviewInfo() } : {}),
         detail:
-          action === "added" && reads.length
-            ? "Another reading of this book."
-            : action === "updated"
-              ? "Existing annotations will be retained."
-              : action === "unchanged"
-                ? "Already in your library."
-                : "New book and reading.",
+          (decision?.action === "new"
+            ? "Separate book or edition."
+            : action === "added" && reads.length
+              ? "Another reading of this book."
+              : action === "updated"
+                ? "Existing annotations will be retained."
+                : action === "unchanged"
+                  ? "Already in your library."
+                  : "New book and reading.") + identifierNote,
       });
     }
     rows.sort((a, b) => a.row - b.row);
@@ -450,13 +741,16 @@ export class BooksStore {
     };
     rows.forEach((row) => summary[row.action]++);
     const preview: ImportPreview = {
-      id: randomUUID(),
+      id: options?.id ?? randomUUID(),
+      version: options?.version ?? 0,
       source: input.source,
       filename: input.filename,
       summary,
       rows,
     };
     const plan: Plan = {
+      parsed,
+      decisions,
       revision: this.revision(),
       catalog: [...catalogWrites.values()],
       entries: [...writes.values()],
@@ -468,11 +762,17 @@ export class BooksStore {
       .prepare("DELETE FROM import_drafts WHERE created_at < ?")
       .run(new Date(Date.now() - 86_400_000).toISOString());
     this.db
-      .prepare("INSERT INTO import_drafts VALUES(?,?,?)")
+      .prepare(
+        "INSERT INTO import_drafts VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET plan_json=excluded.plan_json",
+      )
       .run(preview.id, new Date().toISOString(), JSON.stringify(plan));
     return preview;
   }
-  confirmImport(id: string): Library {
+  resolveImport(
+    id: string,
+    decision: ImportDecision,
+    version: number,
+  ): ImportPreview {
     return this.transaction(() => {
       const draft = this.db
         .prepare("SELECT * FROM import_drafts WHERE id=?")
@@ -487,13 +787,70 @@ export class BooksStore {
         );
       const plan: Plan = JSON.parse(String(draft.plan_json));
       this.checkRevision(plan.revision);
+      if (!plan.parsed)
+        throw new LibraryError(
+          "Preview the file again to review these matches.",
+          409,
+        );
+      if (!Number.isInteger(version) || version !== plan.preview.version)
+        throw new LibraryError(
+          "This preview changed. Preview the file again.",
+          409,
+        );
       if (
-        !(
-          plan.preview.summary.added +
-          plan.preview.summary.updated +
-          plan.preview.summary.unchanged
-        )
+        !decision ||
+        !Number.isInteger(decision.row) ||
+        !["match", "new", "skip", "review"].includes(decision.action) ||
+        !plan.preview.rows.some((row) => row.row === decision.row && row.review)
       )
+        throw new LibraryError("Choose a resolution for an uncertain row.");
+      if (decision.action === "match" && typeof decision.entryId !== "string")
+        throw new LibraryError("Choose an existing reading from your library.");
+      const decisions = (plan.decisions ?? []).filter(
+        (item) => item.row !== decision.row,
+      );
+      if (decision.action !== "review")
+        decisions.push({
+          row: decision.row,
+          action: decision.action,
+          ...(decision.action === "match" ? { entryId: decision.entryId } : {}),
+        });
+      return this.buildPreview(
+        { source: plan.preview.source, filename: plan.preview.filename },
+        { parsed: plan.parsed, decisions, id, version: version + 1 },
+      );
+    });
+  }
+  confirmImport(id: string, version?: number): Library {
+    return this.transaction(() => {
+      const draft = this.db
+        .prepare("SELECT * FROM import_drafts WHERE id=?")
+        .get(id);
+      if (
+        !draft ||
+        Date.parse(String(draft.created_at)) < Date.now() - 86_400_000
+      )
+        throw new LibraryError(
+          "This preview expired or was already imported. Preview the file again.",
+          409,
+        );
+      const plan: Plan = JSON.parse(String(draft.plan_json));
+      this.checkRevision(plan.revision);
+      if (version !== undefined && version !== plan.preview.version)
+        throw new LibraryError(
+          "This preview changed. Review it again before confirming.",
+          409,
+        );
+      if (plan.preview.summary.ambiguous)
+        throw new LibraryError(
+          "Resolve each uncertain row or choose Skip before confirming.",
+        );
+      if (!(
+        plan.preview.summary.added +
+          plan.preview.summary.updated +
+          plan.preview.summary.unchanged ||
+        plan.decisions?.some((decision) => decision.action === "skip")
+      ))
         throw new LibraryError("There are no valid readings to import.");
       for (const category of plan.categories) this.categoryId(category);
       for (const book of plan.catalog)

@@ -63,7 +63,13 @@ export default function WeeklySchedule({ p }: { p: PlannerState }) {
                 type="number"
                 min={0}
                 max={180}
-                value={p.handoffBuffer}
+                value={p.settingsHandoffBuffer}
+                onBlur={() => {
+                  void p.saveSettings(false);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") event.currentTarget.blur();
+                }}
                 onChange={(e) =>
                   p.setHandoffBuffer(
                     Math.max(0, Math.min(180, Number(e.target.value))),

@@ -296,6 +296,54 @@ export function mixPercent(count: number, classifiedCount: number) {
   return classifiedCount ? Math.round((count / classifiedCount) * 100) : 0;
 }
 
+export function normalizeReadingFormat(value: string): ReadingFormat {
+  const label = value
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ");
+  if (
+    [
+      "audio",
+      "audiobook",
+      "audiobooks",
+      "audio book",
+      "audio books",
+      "everand",
+      "libby",
+      "audible",
+    ].includes(label)
+  )
+    return "Audio";
+  if (
+    ["physical", "print", "paperback", "hardcover", "hardback"].includes(label)
+  )
+    return "Physical";
+  if (["kindle", "ebook", "ebooks", "e book", "e books"].includes(label))
+    return "Kindle";
+  return "Unclear";
+}
+
+export function inferReadingFormat({
+  format = "",
+  category = "",
+  shelves = [],
+}: {
+  format?: string;
+  category?: string;
+  shelves?: string[];
+}): ReadingFormat {
+  const explicit = normalizeReadingFormat(format);
+  if (explicit !== "Unclear") return explicit;
+  // The configured provider labels count as audio; conflicting evidence still needs review.
+  const evidence = new Set(
+    [category, ...shelves]
+      .map(normalizeReadingFormat)
+      .filter((value) => value !== "Unclear"),
+  );
+  return evidence.size === 1 ? [...evidence][0] : "Unclear";
+}
+
 export function formatMix(books: Book[]): FormatMix {
   return books.reduce<FormatMix>(
     (mix, book) => {
@@ -383,18 +431,11 @@ export function bookFromRow(
     .split(/[,;|]/)
     .map((tag) => tag.trim())
     .filter(Boolean);
-  const rawFormat = rowValue(row, "Form", "Format", "Type", "Medium")
-    .trim()
-    .toLowerCase();
-  const format: ReadingFormat = ["audio", "audiobook", "audio book"].includes(
-    rawFormat,
-  )
-    ? "Audio"
-    : ["physical", "print", "paperback", "hardcover"].includes(rawFormat)
-      ? "Physical"
-      : ["kindle", "ebook", "e-book", "e book"].includes(rawFormat)
-        ? "Kindle"
-        : "Unclear";
+  const format = inferReadingFormat({
+    format: rowValue(row, "Form", "Format", "Type", "Medium"),
+    category: categories,
+    shelves,
+  });
   const form = rowValue(row, "Form", "Format", "Type", "Medium");
   if (form && !shelves.includes(form)) shelves.push(form);
 

@@ -7,6 +7,8 @@ import {
   Download,
   BookOpen,
   ListFilter,
+  Headphones,
+  BarChart3,
   Check,
   ChevronDown,
   Library,
@@ -33,6 +35,9 @@ import type { Book, BookKind } from "./model";
 import type { ImportSource } from "./contracts";
 import { useLibrary } from "./useLibrary";
 import ImportPreviewDialog from "./ImportPreviewDialog";
+import BookDetailsDialog from "./BookDetailsDialog";
+import YearlyDashboard from "./YearlyDashboard";
+import { needsReadingFormat } from "./readingStats";
 
 function BookCover({ book, index }: { book: Book; index: number }) {
   const [failed, setFailed] = useState(false);
@@ -81,12 +86,26 @@ function BooksApp() {
       return null;
     }
   });
-  const [libraryView, setLibraryView] = useState<"all" | "unclassified">("all");
+  const [libraryView, setLibraryView] = useState<
+    "all" | "unclassified" | "formats" | "yearly"
+  >("all");
   const needsClassification = libraryView === "unclassified";
+  const needsFormat = libraryView === "formats";
+  const isQueue = needsClassification || needsFormat;
+  const missingFormatCount = books.filter(needsReadingFormat).length;
   const unclassifiedCount = books.filter(
     (book) => !book.kind || book.kind === "Unclear",
   ).length;
+  const queueComplete =
+    books.length > 0 &&
+    (needsClassification
+      ? unclassifiedCount === 0
+      : needsFormat && missingFormatCount === 0);
   const [activeCategory, setActiveCategory] = useState("All books");
+  const [selectedBook, setSelectedBook] = useState<{
+    book: Book;
+    revision: number;
+  } | null>(null);
   const [query, setQuery] = useState("");
   const [sortBy, setSortBy] = useState("recent");
   const [notice, setNotice] = useState("");
@@ -111,6 +130,7 @@ function BooksApp() {
       .filter(
         (book) => !needsClassification || !book.kind || book.kind === "Unclear",
       )
+      .filter((book) => !needsFormat || needsReadingFormat(book))
       .filter(
         (book) =>
           activeCategory === "All books" || book.category === activeCategory,
@@ -132,7 +152,7 @@ function BooksApp() {
           a.title.localeCompare(b.title)
         );
       });
-  }, [activeCategory, books, query, sortBy, needsClassification]);
+  }, [activeCategory, books, query, sortBy, needsClassification, needsFormat]);
 
   const ratedBooks = books.filter((book) => book.rating > 0);
   const averageRating = ratedBooks.length
@@ -289,9 +309,9 @@ function BooksApp() {
           <div className="side-label">YOUR LIBRARY</div>
           <nav className="library-nav" aria-label="Library views">
             <button
-              className={`side-link ${!needsClassification && activeCategory === "All books" ? "active" : ""}`}
+              className={`side-link ${libraryView === "all" && activeCategory === "All books" ? "active" : ""}`}
               aria-current={
-                !needsClassification && activeCategory === "All books"
+                libraryView === "all" && activeCategory === "All books"
                   ? "page"
                   : undefined
               }
@@ -314,6 +334,30 @@ function BooksApp() {
             >
               <ListFilter size={17} /> <span>Needs classification</span>
               <span className="side-count">{unclassifiedCount}</span>
+            </button>
+            <button
+              className={`side-link ${needsFormat ? "active" : ""}`}
+              aria-current={needsFormat ? "page" : undefined}
+              onClick={() => {
+                setLibraryView("formats");
+                setActiveCategory("All books");
+                setQuery("");
+              }}
+            >
+              <Headphones size={17} />
+              <span>Needs reading format</span>
+              <span className="side-count">{missingFormatCount}</span>
+            </button>
+            <button
+              className={`side-link ${libraryView === "yearly" ? "active" : ""}`}
+              aria-current={libraryView === "yearly" ? "page" : undefined}
+              onClick={() => {
+                setLibraryView("yearly");
+                setQuery("");
+              }}
+            >
+              <BarChart3 size={17} />
+              <span>Yearly reading</span>
             </button>
           </nav>
 
@@ -346,7 +390,7 @@ function BooksApp() {
             {categories.map((category, index) => (
               <button
                 key={category}
-                className={`side-link ${!needsClassification && activeCategory === category ? "active" : ""}`}
+                className={`side-link ${libraryView === "all" && activeCategory === category ? "active" : ""}`}
                 onClick={() => {
                   setLibraryView("all");
                   setActiveCategory(category);
@@ -359,7 +403,7 @@ function BooksApp() {
             ))}
             {books.some((book) => book.category === uncategorized) && (
               <button
-                className={`side-link ${!needsClassification && activeCategory === uncategorized ? "active" : ""}`}
+                className={`side-link ${libraryView === "all" && activeCategory === uncategorized ? "active" : ""}`}
                 onClick={() => {
                   setLibraryView("all");
                   setActiveCategory(uncategorized);
@@ -417,7 +461,11 @@ function BooksApp() {
 
           <section className="page-intro">
             <div>
-              <h1>Your library</h1>
+              <h1>
+                {libraryView === "yearly"
+                  ? "Your reading year"
+                  : "Your library"}
+              </h1>
             </div>
             <div className="intro-illustration" aria-hidden="true">
               <div className="sun-disc" />
@@ -465,513 +513,595 @@ function BooksApp() {
             </div>
           )}
 
-          {!needsClassification && (
+          {libraryView === "yearly" ? (
+            <YearlyDashboard
+              books={books}
+              year={readingYear}
+              years={readingYears}
+              onChangeYear={setSelectedReadingYear}
+              onViewFormats={() => {
+                setLibraryView("formats");
+                setActiveCategory("All books");
+                setQuery("");
+              }}
+            />
+          ) : (
             <>
-              <section className="stats-row" aria-label="Library statistics">
-                <div className="stat-item">
-                  <span className="stat-number">{books.length}</span>
-                  <span className="stat-label">books read</span>
-                </div>
-                <span className="stat-divider" />
-                <div className="stat-item">
-                  <span className="stat-number">{categories.length}</span>
-                  <span className="stat-label">categories</span>
-                </div>
-                <span className="stat-divider" />
-                <div className="stat-item">
-                  <span className="stat-number stat-rating">
-                    <Star size={17} fill="currentColor" />
-                    {averageRating}
-                  </span>
-                  <span className="stat-label">average rating</span>
-                </div>
-              </section>
-
-              <section
-                className="reading-mix"
-                aria-labelledby="reading-mix-title"
-              >
-                <div className="reading-mix-heading">
-                  <h2 id="reading-mix-title">Fiction &amp; nonfiction</h2>
-                  <label className="year-picker">
-                    <span>Year</span>
-                    <select
-                      value={readingYear}
-                      onChange={(event) =>
-                        setSelectedReadingYear(event.target.value)
-                      }
-                      aria-label="Compare year"
-                    >
-                      {readingYears.map((year) => (
-                        <option key={year} value={year}>
-                          {year}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown size={13} />
-                  </label>
-                </div>
-                <div className="reading-mix-grid">
-                  {[
-                    { label: "Overall", mix: overallMix, total: books.length },
-                    {
-                      label: readingYear || "Selected year",
-                      mix: yearlyMix,
-                      total: books.filter((book) =>
-                        book.dateRead.startsWith(readingYear),
-                      ).length,
-                    },
-                  ].map(({ label, mix, total }) => {
-                    const classified = mix.fiction + mix.nonfiction;
-                    const fictionPercent = mixPercent(mix.fiction, classified);
-                    const nonfictionPercent = classified
-                      ? 100 - fictionPercent
-                      : 0;
-                    return (
-                      <div className="reading-mix-item" key={label}>
-                        <div className="mix-item-heading">
-                          <h3>{label}</h3>
-                          <span>
-                            {classified} / {total} classified
-                          </span>
-                        </div>
-                        <div
-                          className={`mix-bar ${classified ? "" : "mix-bar-empty"}`}
-                          role="img"
-                          aria-label={`${label}: ${fictionPercent}% fiction, ${nonfictionPercent}% nonfiction, ${mix.unclear} unclear`}
-                        >
-                          {classified > 0 && (
-                            <>
-                              <span
-                                className="mix-fiction"
-                                style={{ width: `${fictionPercent}%` }}
-                              />
-                              <span
-                                className="mix-nonfiction"
-                                style={{ width: `${nonfictionPercent}%` }}
-                              />
-                            </>
-                          )}
-                        </div>
-                        <div className="mix-labels">
-                          {classified > 0 ? (
-                            <>
-                              <span>
-                                <i className="mix-dot mix-dot-fiction" />
-                                Fiction <strong>{fictionPercent}%</strong>
-                              </span>
-                              <span>
-                                <i className="mix-dot mix-dot-nonfiction" />
-                                Nonfiction <strong>{nonfictionPercent}%</strong>
-                              </span>
-                            </>
-                          ) : (
-                            <span>No classified books</span>
-                          )}
-                          <span className="mix-unclear">
-                            {mix.unclear} unclear
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
-
-              <section
-                className="reading-mix format-mix"
-                aria-labelledby="format-mix-title"
-              >
-                <div className="reading-mix-heading">
-                  <h2 id="format-mix-title">Audio, physical &amp; Kindle</h2>
-                </div>
-                <div className="reading-mix-grid">
-                  {[
-                    {
-                      label: "Overall",
-                      mix: overallFormatMix,
-                      total: books.length,
-                    },
-                    {
-                      label: readingYear || "Selected year",
-                      mix: yearlyFormatMix,
-                      total: books.filter((book) =>
-                        book.dateRead.startsWith(readingYear),
-                      ).length,
-                    },
-                  ].map(({ label, mix, total }) => {
-                    const classified = mix.audio + mix.physical + mix.kindle;
-                    const audioPercent = mixPercent(mix.audio, classified);
-                    const physicalPercent = mixPercent(
-                      mix.physical,
-                      classified,
-                    );
-                    const kindlePercent = classified
-                      ? 100 - audioPercent - physicalPercent
-                      : 0;
-                    return (
-                      <div className="reading-mix-item" key={label}>
-                        <div className="mix-item-heading">
-                          <h3>{label}</h3>
-                          <span>
-                            {classified} / {total} classified
-                          </span>
-                        </div>
-                        <div
-                          className={`mix-bar ${classified ? "" : "mix-bar-empty"}`}
-                          role="img"
-                          aria-label={`${label}: ${audioPercent}% audio, ${physicalPercent}% physical, ${kindlePercent}% Kindle, ${mix.unclear} unclear`}
-                        >
-                          {classified > 0 && (
-                            <>
-                              <span
-                                className="mix-audio"
-                                style={{ width: `${audioPercent}%` }}
-                              />
-                              <span
-                                className="mix-physical"
-                                style={{ width: `${physicalPercent}%` }}
-                              />
-                              <span
-                                className="mix-kindle"
-                                style={{ width: `${kindlePercent}%` }}
-                              />
-                            </>
-                          )}
-                        </div>
-                        <div className="mix-labels">
-                          {classified > 0 ? (
-                            <>
-                              <span>
-                                <i className="mix-dot mix-dot-audio" />
-                                Audio <strong>{audioPercent}%</strong>
-                              </span>
-                              <span>
-                                <i className="mix-dot mix-dot-physical" />
-                                Physical <strong>{physicalPercent}%</strong>
-                              </span>
-                              <span>
-                                <i className="mix-dot mix-dot-kindle" />
-                                Kindle <strong>{kindlePercent}%</strong>
-                              </span>
-                            </>
-                          ) : (
-                            <span>No format data</span>
-                          )}
-                          <span className="mix-unclear">
-                            {mix.unclear} unclear
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
-            </>
-          )}
-          <section className="collection-section">
-            <div className="collection-heading">
-              <div>
-                <h2>
-                  {needsClassification
-                    ? "Needs classification"
-                    : activeCategory}
-                  <span className="heading-count">{filteredBooks.length}</span>
-                </h2>
-              </div>
-              <div className="collection-actions">
-                <label className="search-box">
-                  <Search size={16} />
-                  <input
-                    type="search"
-                    placeholder="Search books"
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                    aria-label="Search books and authors"
-                  />
-                  {query && (
-                    <button
-                      className="search-clear"
-                      onClick={() => setQuery("")}
-                      aria-label="Clear search"
-                    >
-                      <X size={14} />
-                    </button>
-                  )}
-                </label>
-                <label className="sort-select">
-                  <ArrowDownUp size={15} />
-                  <select
-                    value={sortBy}
-                    onChange={(event) => setSortBy(event.target.value)}
-                    aria-label="Sort books"
+              {!isQueue && (
+                <>
+                  <section
+                    className="stats-row"
+                    aria-label="Library statistics"
                   >
-                    <option value="recent">Recently read</option>
-                    <option value="title">Title</option>
-                    <option value="author">Author</option>
-                    <option value="rating">Rating</option>
-                  </select>
-                  <ChevronDown size={13} />
-                </label>
-              </div>
-            </div>
+                    <div className="stat-item">
+                      <span className="stat-number">{books.length}</span>
+                      <span className="stat-label">books read</span>
+                    </div>
+                    <span className="stat-divider" />
+                    <div className="stat-item">
+                      <span className="stat-number">{categories.length}</span>
+                      <span className="stat-label">categories</span>
+                    </div>
+                    <span className="stat-divider" />
+                    <div className="stat-item">
+                      <span className="stat-number stat-rating">
+                        <Star size={17} fill="currentColor" />
+                        {averageRating}
+                      </span>
+                      <span className="stat-label">average rating</span>
+                    </div>
+                  </section>
 
-            {needsClassification && (
-              <p className="classification-help">
-                Choose Fiction or Nonfiction for each book. Books leave this
-                list once your choice is saved.
-              </p>
-            )}
-            {filteredBooks.length ? (
-              <div className="book-list">
-                {filteredBooks.map((book, index) => (
-                  <article className="book-row" key={book.id}>
-                    <BookCover book={book} index={index} />
-                    <div className="book-info">
-                      <h3>{book.title}</h3>
-                      <p className="book-author">{book.author}</p>
-                      <div className="book-meta">
-                        {book.year && <span>{book.year}</span>}
-                        {book.pages && (
-                          <>
-                            <span className="meta-divider">·</span>
-                            <span>{book.pages} pages</span>
-                          </>
-                        )}
-                        {book.dateRead && (
-                          <>
-                            <span className="meta-divider">·</span>
-                            <span>
-                              Finished {formatFinishedDate(book.dateRead)}
-                            </span>
-                          </>
-                        )}
-                      </div>
-                      <div
-                        className="book-tags"
-                        aria-label={`Tags for ${book.title}`}
-                      >
-                        {(book.tags ?? []).map((tag) => (
-                          <span className="book-tag" key={tag}>
-                            {tag}
-                            <button
-                              type="button"
-                              onClick={() => removeTag(book.id, tag)}
-                              aria-label={`Remove ${tag} tag from ${book.title}`}
-                              title={`Remove ${tag}`}
-                            >
-                              <X size={11} />
-                            </button>
-                          </span>
-                        ))}
-                        {addingTagBookId === book.id ? (
-                          <form
-                            className="add-tag-form"
-                            onSubmit={(event) => addTag(event, book)}
-                          >
-                            <input
-                              autoFocus
-                              value={tagDraft}
-                              onChange={(event) =>
-                                setTagDraft(event.target.value)
-                              }
-                              onKeyDown={(event) => {
-                                if (event.key === "Escape") {
-                                  setAddingTagBookId("");
-                                  setTagDraft("");
-                                }
-                              }}
-                              placeholder="Add tag"
-                              aria-label={`New tag for ${book.title}`}
-                            />
-                            <button
-                              type="submit"
-                              aria-label={`Save tag for ${book.title}`}
-                            >
-                              <Check size={12} />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setAddingTagBookId("");
-                                setTagDraft("");
-                              }}
-                              aria-label="Cancel adding tag"
-                            >
-                              <X size={12} />
-                            </button>
-                          </form>
-                        ) : (
-                          <button
-                            className="add-book-tag"
-                            type="button"
-                            onClick={() => {
-                              setAddingTagBookId(book.id);
-                              setTagDraft("");
-                            }}
-                            aria-label={`Add tag to ${book.title}`}
-                            title="Add tag"
-                          >
-                            <Plus size={12} />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <div
-                      className="book-rating"
-                      aria-label={
-                        book.rating
-                          ? `Rated ${book.rating} out of 5`
-                          : "Not rated"
-                      }
-                    >
-                      {book.rating ? (
-                        <>
-                          <Star size={14} fill="currentColor" />
-                          <span>{book.rating.toFixed(1)}</span>
-                        </>
-                      ) : (
-                        <span className="unrated">Not rated</span>
-                      )}
-                    </div>
-                    <div
-                      className={`book-controls ${needsClassification ? "classification-controls" : ""}`}
-                    >
-                      {needsClassification ? (
-                        <div
-                          className="classification-buttons"
-                          role="group"
-                          aria-label={`Classify ${book.title}`}
-                        >
-                          <button
-                            type="button"
-                            aria-label={`Mark ${book.title} as fiction`}
-                            onClick={() => updateBookKind(book.id, "Fiction")}
-                          >
-                            Fiction
-                          </button>
-                          <button
-                            type="button"
-                            aria-label={`Mark ${book.title} as nonfiction`}
-                            onClick={() =>
-                              updateBookKind(book.id, "Nonfiction")
-                            }
-                          >
-                            Nonfiction
-                          </button>
-                        </div>
-                      ) : (
-                        <label className="book-kind-select-wrap">
-                          <select
-                            value={book.kind ?? "Unclear"}
-                            onChange={(event) =>
-                              updateBookKind(
-                                book.id,
-                                event.target.value as BookKind,
-                              )
-                            }
-                            aria-label={`Type for ${book.title}`}
-                          >
-                            <option value="Unclear">Unclear</option>
-                            <option value="Fiction">Fiction</option>
-                            <option value="Nonfiction">Nonfiction</option>
-                          </select>
-                          <ChevronDown size={13} />
-                        </label>
-                      )}
-                      <label className="category-select-wrap">
+                  <section
+                    className="reading-mix"
+                    aria-labelledby="reading-mix-title"
+                  >
+                    <div className="reading-mix-heading">
+                      <h2 id="reading-mix-title">Fiction &amp; nonfiction</h2>
+                      <label className="year-picker">
+                        <span>Year</span>
                         <select
-                          value={book.category}
+                          value={readingYear}
                           onChange={(event) =>
-                            updateCategory(book.id, event.target.value)
+                            setSelectedReadingYear(event.target.value)
                           }
-                          aria-label={`Category for ${book.title}`}
+                          aria-label="Compare year"
                         >
-                          <option value={uncategorized}>{uncategorized}</option>
-                          {categories.map((category) => (
-                            <option key={category} value={category}>
-                              {category}
+                          {readingYears.map((year) => (
+                            <option key={year} value={year}>
+                              {year}
                             </option>
                           ))}
                         </select>
                         <ChevronDown size={13} />
                       </label>
                     </div>
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <div className="empty-state">
-                <div className="empty-icon">
-                  <BookOpen size={24} />
-                </div>
-                <h3>
-                  {needsClassification &&
-                  books.length > 0 &&
-                  unclassifiedCount === 0
-                    ? "All books classified"
-                    : books.length
-                      ? "No matches"
-                      : "No books yet"}
-                </h3>
-                {needsClassification &&
-                books.length > 0 &&
-                unclassifiedCount === 0 ? (
-                  <>
-                    <p>Every book is marked as fiction or nonfiction.</p>
-                    <button
-                      className="text-button"
-                      onClick={() => {
-                        setLibraryView("all");
-                        setActiveCategory("All books");
-                        setQuery("");
-                      }}
-                    >
-                      View all books
-                    </button>
-                  </>
-                ) : books.length ? (
-                  <button
-                    className="text-button"
-                    onClick={() => {
-                      setQuery("");
-                      setActiveCategory("All books");
-                    }}
-                  >
-                    Clear filters
-                  </button>
-                ) : (
-                  <label htmlFor="goodreads-file" className="import-button">
-                    <Upload size={16} /> Choose Goodreads CSV
-                  </label>
-                )}
-              </div>
-            )}
+                    <div className="reading-mix-grid">
+                      {[
+                        {
+                          label: "Overall",
+                          mix: overallMix,
+                          total: books.length,
+                        },
+                        {
+                          label: readingYear || "Selected year",
+                          mix: yearlyMix,
+                          total: books.filter((book) =>
+                            book.dateRead.startsWith(readingYear),
+                          ).length,
+                        },
+                      ].map(({ label, mix, total }) => {
+                        const classified = mix.fiction + mix.nonfiction;
+                        const fictionPercent = mixPercent(
+                          mix.fiction,
+                          classified,
+                        );
+                        const nonfictionPercent = classified
+                          ? 100 - fictionPercent
+                          : 0;
+                        return (
+                          <div className="reading-mix-item" key={label}>
+                            <div className="mix-item-heading">
+                              <h3>{label}</h3>
+                              <span>
+                                {classified} / {total} classified
+                              </span>
+                            </div>
+                            <div
+                              className={`mix-bar ${classified ? "" : "mix-bar-empty"}`}
+                              role="img"
+                              aria-label={`${label}: ${fictionPercent}% fiction, ${nonfictionPercent}% nonfiction, ${mix.unclear} unclear`}
+                            >
+                              {classified > 0 && (
+                                <>
+                                  <span
+                                    className="mix-fiction"
+                                    style={{ width: `${fictionPercent}%` }}
+                                  />
+                                  <span
+                                    className="mix-nonfiction"
+                                    style={{ width: `${nonfictionPercent}%` }}
+                                  />
+                                </>
+                              )}
+                            </div>
+                            <div className="mix-labels">
+                              {classified > 0 ? (
+                                <>
+                                  <span>
+                                    <i className="mix-dot mix-dot-fiction" />
+                                    Fiction <strong>{fictionPercent}%</strong>
+                                  </span>
+                                  <span>
+                                    <i className="mix-dot mix-dot-nonfiction" />
+                                    Nonfiction{" "}
+                                    <strong>{nonfictionPercent}%</strong>
+                                  </span>
+                                </>
+                              ) : (
+                                <span>No classified books</span>
+                              )}
+                              <span className="mix-unclear">
+                                {mix.unclear} unclear
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
 
-            <footer className="list-footer">
-              <span>
-                {filteredBooks.length} of {books.length} books
-              </span>
-              <div className="backup-actions">
-                <button onClick={exportBackup}>
-                  <Download size={14} /> Export backup
-                </button>
-                <label className="backup-import">
-                  <Upload size={14} /> Import backup
-                  <input
-                    type="file"
-                    accept=".json,application/json"
-                    aria-label="Import library backup"
-                    onChange={(event) => {
-                      void importFile(event.target.files?.[0], "backup");
-                      event.target.value = "";
-                    }}
-                  />
-                </label>
-              </div>
-            </footer>
-          </section>
-          {imports.length > 0 && (
+                  <section
+                    className="reading-mix format-mix"
+                    aria-labelledby="format-mix-title"
+                  >
+                    <div className="reading-mix-heading">
+                      <h2 id="format-mix-title">
+                        Audio, physical &amp; Kindle
+                      </h2>
+                    </div>
+                    <div className="reading-mix-grid">
+                      {[
+                        {
+                          label: "Overall",
+                          mix: overallFormatMix,
+                          total: books.length,
+                        },
+                        {
+                          label: readingYear || "Selected year",
+                          mix: yearlyFormatMix,
+                          total: books.filter((book) =>
+                            book.dateRead.startsWith(readingYear),
+                          ).length,
+                        },
+                      ].map(({ label, mix, total }) => {
+                        const classified =
+                          mix.audio + mix.physical + mix.kindle;
+                        const audioPercent = mixPercent(mix.audio, classified);
+                        const physicalPercent = mixPercent(
+                          mix.physical,
+                          classified,
+                        );
+                        const kindlePercent = classified
+                          ? 100 - audioPercent - physicalPercent
+                          : 0;
+                        return (
+                          <div className="reading-mix-item" key={label}>
+                            <div className="mix-item-heading">
+                              <h3>{label}</h3>
+                              <span>
+                                {classified} / {total} classified
+                              </span>
+                            </div>
+                            <div
+                              className={`mix-bar ${classified ? "" : "mix-bar-empty"}`}
+                              role="img"
+                              aria-label={`${label}: ${audioPercent}% audio, ${physicalPercent}% physical, ${kindlePercent}% Kindle, ${mix.unclear} unclear`}
+                            >
+                              {classified > 0 && (
+                                <>
+                                  <span
+                                    className="mix-audio"
+                                    style={{ width: `${audioPercent}%` }}
+                                  />
+                                  <span
+                                    className="mix-physical"
+                                    style={{ width: `${physicalPercent}%` }}
+                                  />
+                                  <span
+                                    className="mix-kindle"
+                                    style={{ width: `${kindlePercent}%` }}
+                                  />
+                                </>
+                              )}
+                            </div>
+                            <div className="mix-labels">
+                              {classified > 0 ? (
+                                <>
+                                  <span>
+                                    <i className="mix-dot mix-dot-audio" />
+                                    Audio <strong>{audioPercent}%</strong>
+                                  </span>
+                                  <span>
+                                    <i className="mix-dot mix-dot-physical" />
+                                    Physical <strong>{physicalPercent}%</strong>
+                                  </span>
+                                  <span>
+                                    <i className="mix-dot mix-dot-kindle" />
+                                    Kindle <strong>{kindlePercent}%</strong>
+                                  </span>
+                                </>
+                              ) : (
+                                <span>No format data</span>
+                              )}
+                              <span className="mix-unclear">
+                                {mix.unclear} unclear
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+                </>
+              )}
+              <section className="collection-section">
+                <div className="collection-heading">
+                  <div>
+                    <h2>
+                      {needsClassification
+                        ? "Needs classification"
+                        : needsFormat
+                          ? "Needs reading format"
+                          : activeCategory}
+                      <span className="heading-count">
+                        {filteredBooks.length}
+                      </span>
+                    </h2>
+                  </div>
+                  <div className="collection-actions">
+                    <label className="search-box">
+                      <Search size={16} />
+                      <input
+                        type="search"
+                        placeholder="Search books"
+                        value={query}
+                        onChange={(event) => setQuery(event.target.value)}
+                        aria-label="Search books and authors"
+                      />
+                      {query && (
+                        <button
+                          className="search-clear"
+                          onClick={() => setQuery("")}
+                          aria-label="Clear search"
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+                    </label>
+                    <label className="sort-select">
+                      <ArrowDownUp size={15} />
+                      <select
+                        value={sortBy}
+                        onChange={(event) => setSortBy(event.target.value)}
+                        aria-label="Sort books"
+                      >
+                        <option value="recent">Recently read</option>
+                        <option value="title">Title</option>
+                        <option value="author">Author</option>
+                        <option value="rating">Rating</option>
+                      </select>
+                      <ChevronDown size={13} />
+                    </label>
+                  </div>
+                </div>
+
+                {needsClassification && (
+                  <p className="classification-help">
+                    Choose Fiction or Nonfiction for each book. Books leave this
+                    list once your choice is saved.
+                  </p>
+                )}
+                {needsFormat && (
+                  <p className="classification-help">
+                    Choose Audio, Physical, or Kindle for each book. Books leave
+                    this list once the format is saved.
+                  </p>
+                )}
+                {filteredBooks.length ? (
+                  <div className="book-list">
+                    {filteredBooks.map((book, index) => (
+                      <article className="book-row" key={book.id}>
+                        <BookCover key={book.isbn} book={book} index={index} />
+                        <div className="book-info">
+                          <h3>
+                            <button
+                              className="book-title-button"
+                              type="button"
+                              title="Edit book details"
+                              onClick={() => {
+                                db.setError("");
+                                setSelectedBook({
+                                  book,
+                                  revision: db.library.revision,
+                                });
+                              }}
+                            >
+                              {book.title}
+                            </button>
+                          </h3>
+                          <p className="book-author">{book.author}</p>
+                          <div className="book-meta">
+                            {book.year && <span>{book.year}</span>}
+                            {book.pages && (
+                              <>
+                                <span className="meta-divider">·</span>
+                                <span>{book.pages} pages</span>
+                              </>
+                            )}
+                            {book.dateRead && (
+                              <>
+                                <span className="meta-divider">·</span>
+                                <span>
+                                  Finished {formatFinishedDate(book.dateRead)}
+                                </span>
+                              </>
+                            )}
+                          </div>
+                          <div
+                            className="book-tags"
+                            aria-label={`Tags for ${book.title}`}
+                          >
+                            {(book.tags ?? []).map((tag) => (
+                              <span className="book-tag" key={tag}>
+                                {tag}
+                                <button
+                                  type="button"
+                                  onClick={() => removeTag(book.id, tag)}
+                                  aria-label={`Remove ${tag} tag from ${book.title}`}
+                                  title={`Remove ${tag}`}
+                                >
+                                  <X size={11} />
+                                </button>
+                              </span>
+                            ))}
+                            {addingTagBookId === book.id ? (
+                              <form
+                                className="add-tag-form"
+                                onSubmit={(event) => addTag(event, book)}
+                              >
+                                <input
+                                  autoFocus
+                                  value={tagDraft}
+                                  onChange={(event) =>
+                                    setTagDraft(event.target.value)
+                                  }
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Escape") {
+                                      setAddingTagBookId("");
+                                      setTagDraft("");
+                                    }
+                                  }}
+                                  placeholder="Add tag"
+                                  aria-label={`New tag for ${book.title}`}
+                                />
+                                <button
+                                  type="submit"
+                                  aria-label={`Save tag for ${book.title}`}
+                                >
+                                  <Check size={12} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setAddingTagBookId("");
+                                    setTagDraft("");
+                                  }}
+                                  aria-label="Cancel adding tag"
+                                >
+                                  <X size={12} />
+                                </button>
+                              </form>
+                            ) : (
+                              <button
+                                className="add-book-tag"
+                                type="button"
+                                onClick={() => {
+                                  setAddingTagBookId(book.id);
+                                  setTagDraft("");
+                                }}
+                                aria-label={`Add tag to ${book.title}`}
+                                title="Add tag"
+                              >
+                                <Plus size={12} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <div
+                          className="book-rating"
+                          aria-label={
+                            book.rating
+                              ? `Rated ${book.rating} out of 5`
+                              : "Not rated"
+                          }
+                        >
+                          {book.rating ? (
+                            <>
+                              <Star size={14} fill="currentColor" />
+                              <span>{book.rating.toFixed(1)}</span>
+                            </>
+                          ) : (
+                            <span className="unrated">Not rated</span>
+                          )}
+                        </div>
+                        <div
+                          className={`book-controls ${isQueue ? "classification-controls" : ""}`}
+                        >
+                          {needsFormat ? (
+                            <div
+                              className="classification-buttons"
+                              role="group"
+                              aria-label={`Reading format for ${book.title}`}
+                            >
+                              {(["Audio", "Physical", "Kindle"] as const).map(
+                                (format) => (
+                                  <button
+                                    key={format}
+                                    type="button"
+                                    aria-label={`Mark ${book.title} as ${format.toLowerCase()}`}
+                                    onClick={() => {
+                                      void db.saveEntry(book.id, { format });
+                                    }}
+                                  >
+                                    {format}
+                                  </button>
+                                ),
+                              )}
+                            </div>
+                          ) : needsClassification ? (
+                            <div
+                              className="classification-buttons"
+                              role="group"
+                              aria-label={`Classify ${book.title}`}
+                            >
+                              <button
+                                type="button"
+                                aria-label={`Mark ${book.title} as fiction`}
+                                onClick={() =>
+                                  updateBookKind(book.id, "Fiction")
+                                }
+                              >
+                                Fiction
+                              </button>
+                              <button
+                                type="button"
+                                aria-label={`Mark ${book.title} as nonfiction`}
+                                onClick={() =>
+                                  updateBookKind(book.id, "Nonfiction")
+                                }
+                              >
+                                Nonfiction
+                              </button>
+                            </div>
+                          ) : (
+                            <label className="book-kind-select-wrap">
+                              <select
+                                value={book.kind ?? "Unclear"}
+                                onChange={(event) =>
+                                  updateBookKind(
+                                    book.id,
+                                    event.target.value as BookKind,
+                                  )
+                                }
+                                aria-label={`Type for ${book.title}`}
+                              >
+                                <option value="Unclear">Unclear</option>
+                                <option value="Fiction">Fiction</option>
+                                <option value="Nonfiction">Nonfiction</option>
+                              </select>
+                              <ChevronDown size={13} />
+                            </label>
+                          )}
+                          <label className="category-select-wrap">
+                            <select
+                              value={book.category}
+                              onChange={(event) =>
+                                updateCategory(book.id, event.target.value)
+                              }
+                              aria-label={`Category for ${book.title}`}
+                            >
+                              <option value={uncategorized}>
+                                {uncategorized}
+                              </option>
+                              {categories.map((category) => (
+                                <option key={category} value={category}>
+                                  {category}
+                                </option>
+                              ))}
+                            </select>
+                            <ChevronDown size={13} />
+                          </label>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="empty-state">
+                    <div className="empty-icon">
+                      <BookOpen size={24} />
+                    </div>
+                    <h3>
+                      {queueComplete
+                        ? needsFormat
+                          ? "All reading formats set"
+                          : "All books classified"
+                        : books.length
+                          ? "No matches"
+                          : "No books yet"}
+                    </h3>
+                    {queueComplete ? (
+                      <>
+                        <p>
+                          {needsFormat
+                            ? "Every book has an Audio, Physical, or Kindle format."
+                            : "Every book is marked as fiction or nonfiction."}
+                        </p>
+                        <button
+                          className="text-button"
+                          onClick={() => {
+                            setLibraryView("all");
+                            setActiveCategory("All books");
+                            setQuery("");
+                          }}
+                        >
+                          View all books
+                        </button>
+                      </>
+                    ) : books.length ? (
+                      <button
+                        className="text-button"
+                        onClick={() => {
+                          setQuery("");
+                          setActiveCategory("All books");
+                        }}
+                      >
+                        Clear filters
+                      </button>
+                    ) : (
+                      <label htmlFor="goodreads-file" className="import-button">
+                        <Upload size={16} /> Choose Goodreads CSV
+                      </label>
+                    )}
+                  </div>
+                )}
+
+                <footer className="list-footer">
+                  <span>
+                    {filteredBooks.length} of {books.length} books
+                  </span>
+                  <div className="backup-actions">
+                    <button onClick={exportBackup}>
+                      <Download size={14} /> Export backup
+                    </button>
+                    <label className="backup-import">
+                      <Upload size={14} /> Import backup
+                      <input
+                        type="file"
+                        accept=".json,application/json"
+                        aria-label="Import library backup"
+                        onChange={(event) => {
+                          void importFile(event.target.files?.[0], "backup");
+                          event.target.value = "";
+                        }}
+                      />
+                    </label>
+                  </div>
+                </footer>
+              </section>
+            </>
+          )}
+          {libraryView !== "yearly" && imports.length > 0 && (
             <section className="import-history" aria-label="Import history">
               <h2>Recent imports</h2>
               <ul>
@@ -989,9 +1119,31 @@ function BooksApp() {
           )}
         </main>
       </fieldset>
+      {selectedBook && (
+        <BookDetailsDialog
+          book={selectedBook.book}
+          categories={categories}
+          busy={db.busy}
+          error={db.error}
+          onClose={() => {
+            setSelectedBook(null);
+            db.setError("");
+          }}
+          onSave={(changes) =>
+            db.saveEntry(selectedBook.book.id, changes, selectedBook.revision)
+          }
+          onAddReading={(changes) =>
+            db.addReading(selectedBook.book.id, changes, selectedBook.revision)
+          }
+        />
+      )}
       {db.preview && (
         <ImportPreviewDialog
           preview={db.preview}
+          books={books}
+          onResolve={(decision) => {
+            void db.resolveImport(decision);
+          }}
           busy={db.busy}
           error={db.error}
           onClose={() => db.setPreview(null)}

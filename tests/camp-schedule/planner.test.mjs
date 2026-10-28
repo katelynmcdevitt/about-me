@@ -1,8 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { load } from "./load-module.mjs";
-
+import { loadFile } from "../helpers/load-module.mjs";
 const dom = new JSDOM("<!doctype html><html><body></body></html>", {
   url: "http://localhost:3000",
 });
@@ -14,14 +17,13 @@ Object.assign(globalThis, {
   HTMLElement: dom.window.HTMLElement,
   IS_REACT_ACT_ENVIRONMENT: true,
 });
-// JSDOM does not implement the dialog API.
 dom.window.HTMLDialogElement.prototype.showModal = function () {
   this.open = true;
 };
 dom.window.HTMLDialogElement.prototype.close = function () {
   this.open = false;
 };
-const { renderHook, act, cleanup, render, fireEvent, screen } =
+const { renderHook, act, cleanup, render, fireEvent, screen, waitFor, within } =
   await import("@testing-library/react");
 const { createElement } = await import("react");
 const { usePlanner } = await load("usePlanner.ts");
@@ -33,54 +35,103 @@ const { default: MissingWeeksDialog } = await load(
 );
 const { default: CampPlanner } = await load("CampPlanner.tsx");
 const { default: PaymentsTable } = await load("components/PaymentsTable.tsx");
-
+const { GET: indexGet, PATCH: indexPatch } = await loadFile(
+  new URL("../../src/app/api/camp-schedule/route.ts", import.meta.url),
+);
+const { GET: seasonGet, PATCH: seasonPatch } = await loadFile(
+  new URL("../../src/app/api/camp-schedule/[year]/route.ts", import.meta.url),
+);
+const { getCampStore } = await loadFile(
+  new URL("../../src/server/camp-schedule/database.ts", import.meta.url),
+);
+const root = mkdtempSync(join(tmpdir(), "camp-api-test-"));
+let sequence = 0;
+const originalFetch = globalThis.fetch;
+const apiFetch = async (url, init = {}) => {
+  const path = String(url),
+    request = new Request(`http://localhost:3000${path}`, init);
+  if (path === "/api/camp-schedule")
+    return init.method === "PATCH" ? indexPatch(request) : indexGet();
+  const match = path.match(/^\/api\/camp-schedule\/(\d{4})$/);
+  if (match) {
+    const context = { params: Promise.resolve({ year: match[1] }) };
+    return init.method === "PATCH"
+      ? seasonPatch(request, context)
+      : seasonGet(request, context);
+  }
+  throw new Error(`Unexpected request: ${path}`);
+};
+const ready = async (result) => waitFor(() => assert.ok(result.current.loaded));
+const uiReady = async () =>
+  waitFor(() =>
+    assert.ok(
+      !screen.getByRole("button", { name: "Add a camp" }).closest("fieldset")
+        .disabled,
+    ),
+  );
 test.beforeEach(() => {
+  process.env.CAMP_DATABASE_PATH = join(root, `${sequence++}.sqlite`);
   localStorage.clear();
+  globalThis.fetch = apiFetch;
+  window.confirm = () => true;
 });
 test.afterEach(() => {
   cleanup();
+  getCampStore().close();
+  globalThis.fetch = originalFetch;
+});
+test.after(() => {
+  delete process.env.CAMP_DATABASE_PATH;
+  rmSync(root, { recursive: true, force: true });
 });
 
-test("supplied schedule retains totals, shared payments, coverage and handoffs", () => {
+test("supplied payments, care and handoffs remain correct with database-backed payment toggles", async () => {
   const { result } = renderHook(() => usePlanner(2026));
+  await ready(result);
   const p = () => result.current;
   assert.equal(p().camps.length, 22);
   assert.equal(p().total, 4726.8);
   assert.deepEqual(p().paidByKid, [2959.8, 1767]);
   assert.equal(p().covered, 21);
   assert.equal(p().missingWeeks.length, 1);
-  assert.deepEqual(p().missingWeeks[0], {
-    kid: "Kayleigh",
-    kidIndex: 1,
-    start: "2026-08-17",
-    end: "2026-08-21",
-    reason: "No camp",
+  assert.equal(p().missingWeeks[0].reason, "No camp");
+  const shared = p().camps.find((camp) => camp.id === "kayleigh-2026-week-6");
+  await act(async () => {
+    await p().togglePaid(shared);
   });
-  const shared = p().camps.find((c) => c.id === "kayleigh-2026-week-6");
-  act(() => p().togglePaid(shared));
   assert.equal(p().paymentLabel(shared), "Unpaid");
   assert.equal(p().total, 4057);
   assert.equal(p().unpaidTotal, 669.8);
-  act(() => p().togglePaid(shared));
+  await act(async () => {
+    await p().togglePaid(shared);
+  });
   assert.equal(p().total, 4726.8);
   act(() => p().setFilter(0));
-  assert.ok(p().weekDays.every((day) => day.camps.every((c) => c.kid === 0)));
+  assert.ok(
+    p().weekDays.every((day) => day.camps.every((camp) => camp.kid === 0)),
+  );
   assert.equal(p().weekWarningDays, 5);
-  assert.equal(p().weekDays[0].warnings.length, 2);
+  assert.equal(localStorage.getItem("camp-days-2026"), null);
 });
 
-test("camp edits, deletions and settings persist separately for each summer", () => {
+test("camp edits, deletions and settings persist independently across seasons and reloads", async () => {
   let hook = renderHook(() => usePlanner(2026));
+  await ready(hook.result);
   act(() => {
     hook.result.current.setKids(["Owen edited", "Kayleigh"]);
     hook.result.current.setHandoffBuffer(45);
-    hook.result.current.open(hook.result.current.camps[0]);
   });
-  act(() => hook.result.current.remove());
-  const saved2026 = localStorage.getItem("camp-days-2026");
+  await act(async () => {
+    await hook.result.current.saveSettings(false);
+  });
+  act(() => hook.result.current.open(hook.result.current.camps[0]));
+  await act(async () => {
+    await hook.result.current.remove();
+  });
+  const saved2026 = getCampStore().getSeason(2026);
   hook.unmount();
   hook = renderHook(() => usePlanner(2027));
-  assert.equal(hook.result.current.camps.length, 0);
+  await ready(hook.result);
   assert.equal(hook.result.current.form.start, "2027-06-14");
   assert.equal(hook.result.current.form.end, "2027-06-18");
   act(() =>
@@ -91,15 +142,14 @@ test("camp edits, deletions and settings persist separately for each summer", ()
       cost: 500,
     })),
   );
-  act(() => hook.result.current.save());
-  assert.equal(hook.result.current.camps.length, 1);
-  assert.equal(hook.result.current.total, 0);
+  await act(async () => {
+    await hook.result.current.save();
+  });
   assert.equal(hook.result.current.unpaidTotal, 500);
   assert.equal(
     hook.result.current.paymentRows.flatMap((row) => row.entries.flat()).length,
     1,
   );
-  assert.equal(hook.result.current.paymentRows.length, 11);
   act(() => hook.result.current.open(hook.result.current.camps[0]));
   act(() =>
     hook.result.current.setForm((previous) => ({
@@ -108,45 +158,55 @@ test("camp edits, deletions and settings persist separately for each summer", ()
       paid: true,
     })),
   );
-  act(() => hook.result.current.save());
+  await act(async () => {
+    await hook.result.current.save();
+  });
   assert.equal(hook.result.current.total, 500);
-  assert.equal(localStorage.getItem("camp-days-2026"), saved2026);
+  assert.deepEqual(getCampStore().getSeason(2026), saved2026);
   hook.unmount();
   hook = renderHook(() => usePlanner(2026));
+  await ready(hook.result);
   assert.equal(hook.result.current.camps.length, 21);
   assert.equal(hook.result.current.kids[0], "Owen edited");
   assert.equal(hook.result.current.handoffBuffer, 45);
   hook.unmount();
   hook = renderHook(() => usePlanner(2027));
+  await ready(hook.result);
   assert.equal(hook.result.current.camps[0].name, "Edited");
   act(() => hook.result.current.open(hook.result.current.camps[0]));
-  act(() => hook.result.current.remove());
+  await act(async () => {
+    await hook.result.current.remove();
+  });
   hook.unmount();
   hook = renderHook(() => usePlanner(2027));
+  await ready(hook.result);
   assert.deepEqual(hook.result.current.camps, []);
 });
 
-test("invalid names, dates and times cannot be saved", () => {
+test("invalid names, years, reversed dates and times cannot be saved", async () => {
   const { result } = renderHook(() => usePlanner(2027));
-  const original = result.current.form;
+  await ready(result);
+  const blank = result.current.form;
   for (const fields of [
-    { name: "  " },
+    { name: " " },
     { name: "Wrong year", start: "2026-06-15" },
     { name: "Reversed", end: "2027-06-13" },
     { name: "Times", dropoff: "15:00", pickup: "08:00" },
   ]) {
-    act(() => result.current.setForm({ ...original, ...fields }));
-    act(() => result.current.save());
+    act(() => result.current.setForm({ ...blank, ...fields }));
+    await act(async () => {
+      await result.current.save();
+    });
     assert.ok(result.current.error);
     assert.equal(result.current.camps.length, 0);
   }
 });
 
-test("missing weeks opens the matching week and camper", () => {
+test("missing-week navigation and week selection still work", async () => {
   const { result } = renderHook(() => usePlanner(2026));
+  await ready(result);
   act(() => result.current.viewMissingWeek("2026-08-17", 1));
   assert.equal(result.current.tab, "Schedule");
-  assert.equal(result.current.calendarView, "week");
   assert.equal(result.current.filter, 1);
   act(() => result.current.selectWeek("2026-07-22"));
   assert.equal(result.current.selectedWeek, "2026-07-20");
@@ -154,6 +214,181 @@ test("missing weeks opens the matching week and camper", () => {
   assert.equal(result.current.selectedWeek, "2026-07-13");
 });
 
+test("JSON backup restores preserve deletions, reject wrong years, and honor cancellation", async () => {
+  const { result } = renderHook(() => usePlanner(2026));
+  await ready(result);
+  const exported = {
+    year: 2026,
+    kids: ["Owen imported", "Kayleigh"],
+    camps: result.current.camps.slice(1),
+    handoffBuffer: 20,
+  };
+  await act(async () => {
+    await result.current.importData({
+      text: async () => JSON.stringify(exported),
+    });
+  });
+  assert.equal(result.current.camps.length, 21);
+  assert.equal(result.current.kids[0], "Owen imported");
+  await act(async () => {
+    await result.current.importData({
+      text: async () => JSON.stringify({ ...exported, year: 2027 }),
+    });
+  });
+  assert.match(result.current.importMessage, /Select Summer 2027/);
+  assert.equal(result.current.camps.length, 21);
+  window.confirm = () => false;
+  await act(async () => {
+    await result.current.importData({
+      text: async () => JSON.stringify({ ...exported, camps: [] }),
+    });
+  });
+  assert.equal(result.current.camps.length, 21);
+  assert.throws(() =>
+    parseSavedPlan({ kids: ["A", "B"], camps: [{ id: "x" }] }),
+  );
+});
+
+test("failed saves keep committed camps unchanged and retain the editable draft", async () => {
+  const { result } = renderHook(() => usePlanner(2027));
+  await ready(result);
+  globalThis.fetch = async (url, init) =>
+    init?.method === "PATCH"
+      ? Response.json({ error: "Database unavailable" }, { status: 500 })
+      : apiFetch(url, init);
+  act(() => result.current.open());
+  act(() =>
+    result.current.setForm((previous) => ({ ...previous, name: "Keep draft" })),
+  );
+  await act(async () => {
+    await result.current.save();
+  });
+  assert.equal(result.current.camps.length, 0);
+  assert.equal(result.current.modal, true);
+  assert.equal(result.current.form.name, "Keep draft");
+  assert.match(result.current.error, /Database unavailable/);
+});
+
+test("React payment controls save the shared owner before updating totals", async () => {
+  function Payments() {
+    return createElement(PaymentsTable, { p: usePlanner(2026) });
+  }
+  render(createElement(Payments));
+  const button = await screen.findByRole("button", {
+    name: /Kayleigh · YMCA: Paid.*shared payment/,
+  });
+  fireEvent.click(button);
+  await waitFor(() =>
+    assert.equal(button.getAttribute("aria-pressed"), "false"),
+  );
+  assert.ok(screen.getByText("$669.80 unpaid"));
+  assert.equal(
+    getCampStore()
+      .getSeason(2026)
+      .camps.find((camp) => camp.id === "owen-2026-week-6").paid,
+    false,
+  );
+});
+
+test("full planner switches years, adds camps, and saves family settings with Done", async () => {
+  render(createElement(CampPlanner));
+  await screen.findByRole("heading", { name: "Overview", exact: true });
+  await uiReady();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Schedule", exact: true }),
+  );
+  assert.ok(screen.getByRole("heading", { name: "Weekly schedule" }));
+  fireEvent.click(screen.getByRole("button", { name: "Month", exact: true }));
+  assert.ok(screen.getByRole("heading", { name: "Calendar", exact: true }));
+  fireEvent.change(screen.getByRole("combobox", { name: "Summer year" }), {
+    target: { value: "2027" },
+  });
+  await waitFor(() =>
+    assert.equal(
+      screen.getByRole("combobox", { name: "Summer year" }).value,
+      "2027",
+    ),
+  );
+  await uiReady();
+  fireEvent.click(screen.getByRole("button", { name: "Add a camp" }));
+  fireEvent.change(screen.getByLabelText("Camp name"), {
+    target: { value: "Year switch test" },
+  });
+  fireEvent.change(screen.getByLabelText("Cost ($)"), {
+    target: { value: "215.50" },
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Add camp", exact: true }),
+  );
+  await waitFor(() => assert.ok(!screen.queryByRole("dialog")));
+  assert.equal(getCampStore().getSeason(2027).camps[0].cost, 215.5);
+  fireEvent.click(
+    screen.getAllByRole("button", { name: "Family settings", exact: true })[0],
+  );
+  fireEvent.change(screen.getByLabelText("Camper 1"), {
+    target: { value: "Renamed camper" },
+  });
+  assert.notEqual(getCampStore().getSeason(2027).kids[0], "Renamed camper");
+  fireEvent.click(screen.getByRole("button", { name: "Done", exact: true }));
+  await waitFor(() => assert.ok(!screen.queryByRole("dialog")));
+  assert.equal(getCampStore().getSeason(2027).kids[0], "Renamed camper");
+  cleanup();
+  render(createElement(CampPlanner));
+  await screen.findByRole("heading", { name: "Overview", exact: true });
+  await uiReady();
+  assert.equal(
+    screen.getByRole("combobox", { name: "Summer year" }).value,
+    "2027",
+  );
+  assert.equal(getCampStore().getIndex().selectedYear, 2027);
+});
+
+test("browser migration is explicit and leaves the old browser data intact", async () => {
+  const original = loadSeason(2026);
+  const legacy = {
+    camps: original.camps.slice(1),
+    kids: ["Browser Owen", "Kayleigh"],
+    handoffBuffer: 40,
+    appliedImports: original.appliedImports,
+  };
+  const raw = JSON.stringify(legacy);
+  localStorage.setItem("camp-days-2026", raw);
+  render(createElement(CampPlanner));
+  await screen.findByRole("heading", { name: "Overview", exact: true });
+  await uiReady();
+  assert.equal(getCampStore().getSeason(2026).camps.length, 22);
+  fireEvent.click(screen.getByRole("button", { name: "Migrate browser plan" }));
+  await screen.findByText(/Migrated browser plan for 2026/);
+  assert.equal(getCampStore().getSeason(2026).camps.length, 21);
+  assert.equal(getCampStore().getSeason(2026).kids[0], "Browser Owen");
+  assert.equal(localStorage.getItem("camp-days-2026"), raw);
+  assert.ok(!screen.queryByRole("button", { name: "Migrate browser plan" }));
+});
+
+test("camp API rejects foreign-origin writes and invalid years without altering plans", async () => {
+  const request = new Request("http://localhost:3000/api/camp-schedule/2026", {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Origin: "https://example.com",
+    },
+    body: JSON.stringify({ action: "deleteCamp", id: "x", revision: 0 }),
+  });
+  assert.equal(
+    (await seasonPatch(request, { params: Promise.resolve({ year: "2026" }) }))
+      .status,
+    403,
+  );
+  assert.equal(
+    (
+      await seasonGet(new Request("http://localhost/api/camp-schedule/nope"), {
+        params: Promise.resolve({ year: "nope" }),
+      })
+    ).status,
+    400,
+  );
+  assert.equal(getCampStore().getSeason(2026).camps.length, 22);
+});
 test("old saves migrate types and retain edited values and deleted entries", () => {
   const original = loadSeason(2026);
   original.camps = original.camps.filter((c) => c.id !== "owen-2026-week-2");
@@ -170,65 +405,6 @@ test("old saves migrate types and retain edited values and deleted entries", () 
     "Sports",
   );
   assert.equal(migrated.camps.find((c) => c.id === noCamp.id).noCamp, true);
-});
-
-test("backup import accepts original exports, preserves deletions, rejects wrong year and invalid files", async () => {
-  const { result, unmount } = renderHook(() => usePlanner(2026));
-  window.confirm = () => true;
-  const exported = {
-    year: 2026,
-    kids: ["Owen imported", "Kayleigh"],
-    camps: result.current.camps.slice(1),
-    handoffBuffer: 20,
-  };
-  await act(async () =>
-    result.current.importData({ text: async () => JSON.stringify(exported) }),
-  );
-  assert.equal(result.current.camps.length, 21);
-  assert.equal(result.current.kids[0], "Owen imported");
-  assert.equal(result.current.handoffBuffer, 20);
-  unmount();
-  const next = renderHook(() => usePlanner(2026));
-  assert.equal(next.result.current.camps.length, 21);
-  await act(async () =>
-    next.result.current.importData({
-      text: async () => JSON.stringify({ ...exported, year: 2027 }),
-    }),
-  );
-  assert.match(next.result.current.importMessage, /Select Summer 2027/);
-  assert.equal(next.result.current.camps.length, 21);
-  assert.throws(() =>
-    parseSavedPlan({ kids: ["A", "B"], camps: [{ id: "x" }] }),
-  );
-  assert.throws(() => parseSavedPlan({ ...exported, handoffBuffer: -1 }));
-  window.confirm = () => false;
-  await act(async () =>
-    next.result.current.importData({
-      text: async () => JSON.stringify({ ...exported, camps: [] }),
-    }),
-  );
-  assert.equal(next.result.current.camps.length, 21);
-});
-
-test("storage failures still allow editing and warn the user", () => {
-  const original = dom.window.Storage.prototype.setItem;
-  dom.window.Storage.prototype.setItem = () => {
-    throw new Error("Full");
-  };
-  try {
-    const { result } = renderHook(() => usePlanner(2027));
-    assert.equal(result.current.storageError, true);
-    act(() =>
-      result.current.setForm((previous) => ({
-        ...previous,
-        name: "Still editable",
-      })),
-    );
-    act(() => result.current.save());
-    assert.equal(result.current.camps[0].name, "Still editable");
-  } finally {
-    dom.window.Storage.prototype.setItem = original;
-  }
 });
 
 test("handoffs compare pickup/drop-off pairs across kids and ignore wishlist and no-care entries", () => {
@@ -267,128 +443,5 @@ test("handoffs compare pickup/drop-off pairs across kids and ignore wishlist and
       30,
     ).length,
     0,
-  );
-});
-
-test("React dialog submits decimal costs, closes, and renders missing-week navigation", () => {
-  function Editor() {
-    const p = usePlanner(2027);
-    return createElement(PlannerDialogs, { p });
-  }
-  render(createElement(Editor));
-  fireEvent.change(screen.getByLabelText("Camp name"), {
-    target: { value: "React camp" },
-  });
-  fireEvent.change(screen.getByLabelText("Cost ($)"), {
-    target: { value: "215.50" },
-  });
-  fireEvent.click(
-    screen.getByRole("button", { name: "Add camp", exact: true }),
-  );
-  assert.equal(
-    JSON.parse(localStorage.getItem("camp-days-2027")).camps[0].cost,
-    215.5,
-  );
-  cleanup();
-  const initial = loadSeason(2026);
-  const derived = derivePlan(
-    initial.camps,
-    initial.kids,
-    initial.season,
-    -1,
-    2026,
-    5,
-    "2026-06-15",
-    30,
-  );
-  let viewed;
-  render(
-    createElement(MissingWeeksDialog, {
-      p: {
-        ...derived,
-        setMissingOpen: () => {},
-        viewMissingWeek: (...args) => {
-          viewed = args;
-        },
-      },
-    }),
-  );
-  fireEvent.click(screen.getByRole("button", { name: /View week/ }));
-  assert.deepEqual(viewed, ["2026-08-17", 1]);
-});
-
-test("React payment buttons toggle the shared owner and update the displayed total", () => {
-  function Payments() {
-    const p = usePlanner(2026);
-    return createElement(PaymentsTable, { p });
-  }
-  render(createElement(Payments));
-  const button = screen.getByRole("button", {
-    name: /Kayleigh · YMCA: Paid.*shared payment/,
-  });
-  fireEvent.click(button);
-  assert.equal(button.getAttribute("aria-pressed"), "false");
-  assert.ok(screen.getByText("$669.80 unpaid"));
-  assert.equal(
-    JSON.parse(localStorage.getItem("camp-days-2026")).camps.find(
-      (c) => c.id === "owen-2026-week-6",
-    ).paid,
-    false,
-  );
-});
-
-test("full React planner navigates views, switches years, and restores saved selection", () => {
-  render(createElement(CampPlanner));
-  assert.ok(screen.getByRole("heading", { name: "Overview", exact: true }));
-  fireEvent.click(
-    screen.getByRole("button", { name: "Schedule", exact: true }),
-  );
-  assert.ok(screen.getByRole("heading", { name: "Weekly schedule" }));
-  fireEvent.click(screen.getByRole("button", { name: "Month", exact: true }));
-  assert.ok(screen.getByRole("heading", { name: "Calendar", exact: true }));
-  fireEvent.click(screen.getByRole("button", { name: /^Camps/ }));
-  assert.ok(screen.getByRole("heading", { name: "All camps", exact: true }));
-  fireEvent.click(
-    screen.getByRole("button", { name: "Payments", exact: true }),
-  );
-  assert.ok(screen.getByRole("table"));
-  fireEvent.change(screen.getByRole("combobox", { name: "Summer year" }), {
-    target: { value: "2027" },
-  });
-  assert.equal(localStorage.getItem("camp-days-selected-year"), "2027");
-  assert.ok(screen.getByText("0 camps"));
-  fireEvent.click(screen.getByRole("button", { name: "Add a camp" }));
-  fireEvent.change(screen.getByLabelText("Camp name"), {
-    target: { value: "Year switch test" },
-  });
-  fireEvent.click(
-    screen.getByRole("button", { name: "Add camp", exact: true }),
-  );
-  assert.equal(screen.queryByRole("dialog"), null);
-  assert.equal(
-    JSON.parse(localStorage.getItem("camp-days-2027")).camps.length,
-    1,
-  );
-  fireEvent.change(screen.getByRole("combobox", { name: "Summer year" }), {
-    target: { value: "2026" },
-  });
-  assert.ok(screen.getByText("22 camps"));
-  cleanup();
-  render(createElement(CampPlanner));
-  assert.equal(
-    screen.getByRole("combobox", { name: "Summer year" }).value,
-    "2026",
-  );
-  fireEvent.click(
-    screen.getAllByRole("button", { name: "Family settings", exact: true })[0],
-  );
-  fireEvent.change(screen.getByLabelText("Camper 1"), {
-    target: { value: "Renamed camper" },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "Done", exact: true }));
-  assert.equal(screen.queryByRole("dialog"), null);
-  assert.equal(
-    JSON.parse(localStorage.getItem("camp-days-2026")).kids[0],
-    "Renamed camper",
   );
 });

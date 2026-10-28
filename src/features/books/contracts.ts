@@ -8,13 +8,26 @@ export type ImportSummary = {
   skipped: number;
   ambiguous: number;
 };
+export type ImportDecision = {
+  row: number;
+  action: "match" | "new" | "skip" | "review";
+  entryId?: string;
+};
 export type ImportRow = {
+  review?: {
+    author: string;
+    isbn: string;
+    dateRead: string;
+    suggestedEntryIds: string[];
+    decision?: ImportDecision;
+  };
   row: number;
   title: string;
   action: "added" | "updated" | "unchanged" | "skipped" | "ambiguous";
   detail: string;
 };
 export type ImportPreview = {
+  version: number;
   id: string;
   filename: string;
   source: ImportSource;
@@ -41,6 +54,13 @@ export type ImportInput = {
   backup?: unknown;
 };
 export type EntryChanges = {
+  title?: string;
+  author?: string;
+  isbn?: string;
+  year?: number | null;
+  pages?: number | null;
+  rating?: number;
+  dateRead?: string;
   category?: string;
   tags?: string[];
   kind?: "Fiction" | "Nonfiction" | "Unclear";
