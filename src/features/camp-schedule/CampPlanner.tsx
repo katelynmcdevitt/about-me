@@ -8,6 +8,7 @@ import type { CampIndex } from "./contracts";
 import { usePlanner } from "./usePlanner";
 import PlannerSidebar from "./components/PlannerSidebar";
 import PlannerSummary from "./components/PlannerSummary";
+import NeedsAttention from "./components/NeedsAttention";
 import WeeklySchedule from "./components/WeeklySchedule";
 import MonthCalendar from "./components/MonthCalendar";
 import CampList from "./components/CampList";
@@ -103,12 +104,12 @@ function Planner({
                 </button>
               </div>
             )}
-            {!!p.conflicts.length && (
+            {!!p.conflicts.length && p.tab !== "Needs attention" && (
               <div className="warning">
                 {p.conflicts.length} overlapping bookings for the same camper.
               </div>
             )}
-            {!!p.unknownCosts && (
+            {!!p.unknownCosts && p.tab !== "Needs attention" && (
               <div className="warning">
                 {p.unknownCosts} missing prices · excluded from totals
               </div>
@@ -116,8 +117,9 @@ function Planner({
             {(p.tab === "Overview" || p.tab === "Payments") && (
               <PlannerSummary p={p} />
             )}
+            {p.tab === "Needs attention" && <NeedsAttention p={p} />}
             {p.tab === "Schedule" && <WeeklySchedule p={p} />}
-            {p.tab !== "Payments" && (
+            {p.tab !== "Payments" && p.tab !== "Needs attention" && (
               <div
                 className={`main-grid ${p.tab !== "Overview" ? "full-grid" : ""}`}
               >

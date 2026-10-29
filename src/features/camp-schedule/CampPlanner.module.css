@@ -2029,3 +2029,106 @@
   opacity: 0.6;
   cursor: wait;
 }
+
+.root :global(.attention-intro),
+.root :global(.attention-help),
+.root :global(.attention-empty) {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.root :global(.attention-intro) {
+  margin: 0 0 24px;
+}
+.root :global(.attention-grid) {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.root :global(.attention-panel) {
+  min-width: 0;
+}
+.root :global(.attention-help),
+.root :global(.attention-empty) {
+  margin: 0;
+  padding: 0 23px 20px;
+}
+.root :global(.attention-panel ul) {
+  list-style: none;
+  padding: 0 23px 16px;
+  margin: 0;
+}
+.root :global(.attention-panel li + li) {
+  border-top: 1px solid var(--border);
+}
+.root :global(.attention-panel li button) {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 0;
+  text-align: left;
+}
+.root :global(.attention-panel li strong) {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.root :global(.attention-panel li small) {
+  display: block;
+  margin-top: 5px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+.root :global(.attention-action) {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--accent);
+  font-size: 11px;
+}
+.root :global(.attention-clear) {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 20px;
+  margin-bottom: 24px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--accent);
+}
+.root :global(.attention-clear h2) {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+.root :global(.attention-clear p) {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.7;
+}
+@media (max-width: 1100px) {
+  .root :global(.attention-grid) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 760px) {
+  .root :global(.sidebar nav) {
+    overflow-x: auto;
+    justify-content: flex-start;
+  }
+  .root :global(.sidebar nav button) {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+}
+@media (max-width: 400px) {
+  .root :global(.attention-panel li button) {
+    flex-wrap: wrap;
+  }
+}

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { derivePlan, loadSeason, parseSavedPlan } from "./model";
 import general from "./data/general.json";
+import { attentionItems } from "./attention";
 import type { Camp } from "./types";
 import type { CampCommand, CampSeason } from "./contracts";
 
@@ -337,6 +338,12 @@ export function usePlanner(seasonYear: number) {
   };
   return {
     ...derived,
+    attention: attentionItems(
+      camps,
+      derived.missingWeeks,
+      seasonYear,
+      handoffBuffer,
+    ),
     season,
     totalCamperWeeks,
     camps,

@@ -273,13 +273,19 @@ export function derivePlan(
         day: "numeric",
       }),
       filled: kids.map((_, k) =>
-        camps.some(
-          (c) =>
-            c.kid === k &&
-            c.status === "Confirmed" &&
-            !c.noCamp &&
-            c.start <= iso(d) &&
-            c.end >= iso(end),
+        Array.from({ length: season.daysPerWeek }, (_, offset) => {
+          const day = new Date(d);
+          day.setDate(day.getDate() + offset);
+          return iso(day);
+        }).every((date) =>
+          camps.some(
+            (c) =>
+              c.kid === k &&
+              c.status === "Confirmed" &&
+              !c.noCamp &&
+              c.start <= date &&
+              c.end >= date,
+          ),
         ),
       ),
     };

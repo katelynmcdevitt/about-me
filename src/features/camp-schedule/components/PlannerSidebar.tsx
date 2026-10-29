@@ -7,6 +7,7 @@ import {
   Wallet,
   Settings2,
   ArrowLeft,
+  CircleAlert,
 } from "lucide-react";
 import type { PlannerState } from "../usePlanner";
 
@@ -22,6 +23,7 @@ export default function PlannerSidebar({ p }: { p: PlannerState }) {
       <nav aria-label="Camp planner">
         {[
           { name: "Overview", icon: LayoutDashboard },
+          { name: "Needs attention", icon: CircleAlert },
           { name: "Schedule", icon: CalendarDays },
           { name: "Camps", icon: Tent },
           { name: "Payments", icon: Wallet },
@@ -34,6 +36,9 @@ export default function PlannerSidebar({ p }: { p: PlannerState }) {
           >
             <Icon size={19} />
             {name}
+            {name === "Needs attention" && (
+              <span className="nav-count">{p.attention.count}</span>
+            )}
             {name === "Camps" && (
               <span className="nav-count">{p.camps.length}</span>
             )}

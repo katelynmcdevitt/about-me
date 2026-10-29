@@ -73,6 +73,20 @@ Enter. Errors leave editor drafts available and keep committed data unchanged.
 Stale edits reload the current season; close and reopen an editor before saving
 its draft against the updated plan.
 
+### Needs attention
+
+Choose **Needs attention** in Camp Days' left navigation to review both campers
+for the selected summer. The view groups missing care weeks, unpaid costs,
+missing prices, and weekly handoff alerts. Shared payments appear once, and free
+or wishlist camps are excluded from payment/price tasks. Confirmed bookings can
+cover a week together even when each booking covers only part of the week.
+
+Click **View week** for a care gap, **Edit payment** or **Add price** to open a camp,
+or **Review week** to see both campers' handoff times. Items recalculate after a
+successful save. Handoff alerts include weekday bookings outside the configured
+care-coverage weeks and are grouped by Monday; travel times are not verified and
+shared stops may be fine. Counts ignore the camper filter so issues are not hidden.
+
 ### Migrate existing browser schedules
 
 1. Open the summer you want to transfer.

@@ -445,3 +445,112 @@ test("handoffs compare pickup/drop-off pairs across kids and ignore wishlist and
     0,
   );
 });
+
+test("Needs attention routes to care weeks and handoff weeks, and saved payments and prices leave the queue", async () => {
+  const store = getCampStore();
+  let plan = store.getSeason(2026);
+  plan = store.mutate(2026, {
+    action: "togglePaid",
+    id: "kayleigh-2026-week-6",
+    revision: plan.revision,
+  });
+  const missing = plan.camps.find((camp) => camp.id === "kayleigh-2026-week-1");
+  plan = store.mutate(2026, {
+    action: "saveCamp",
+    camp: { ...missing, cost: null },
+    editing: true,
+    revision: plan.revision,
+  });
+  render(createElement(CampPlanner));
+  await screen.findByRole("heading", { name: "Overview", exact: true });
+  await uiReady();
+  fireEvent.click(screen.getByRole("button", { name: /Needs attention/ }));
+  let view = within(
+    screen.getByRole("region", { name: "Needs attention overview" }),
+  );
+  const payments = within(view.getByRole("region", { name: "Unpaid camps" }));
+  assert.equal(payments.getAllByRole("listitem").length, 1);
+  fireEvent.click(payments.getByRole("button", { name: /Edit payment/ }));
+  let dialog = within(
+    await screen.findByRole("dialog", { name: "Camp details" }),
+  );
+  fireEvent.change(dialog.getByLabelText("Payment status"), {
+    target: { value: "true" },
+  });
+  fireEvent.click(dialog.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => assert.ok(!screen.queryByRole("dialog")));
+  assert.ok(view.getByText("No unpaid camp costs."));
+  fireEvent.click(
+    within(view.getByRole("region", { name: "Missing prices" })).getByRole(
+      "button",
+      { name: /Add price/ },
+    ),
+  );
+  dialog = within(await screen.findByRole("dialog", { name: "Camp details" }));
+  fireEvent.change(dialog.getByLabelText("Cost ($)"), {
+    target: { value: "0" },
+  });
+  fireEvent.click(dialog.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => assert.ok(!screen.queryByRole("dialog")));
+  assert.ok(view.getByText("All camp prices are recorded."));
+  fireEvent.click(
+    within(view.getByRole("region", { name: "Missing care" })).getByRole(
+      "button",
+      { name: /View week/ },
+    ),
+  );
+  assert.ok(screen.getByRole("heading", { name: "Weekly schedule" }));
+  assert.equal(screen.getByLabelText("Week of").value, "2026-08-17");
+  fireEvent.click(screen.getByRole("button", { name: /Needs attention/ }));
+  view = within(
+    screen.getByRole("region", { name: "Needs attention overview" }),
+  );
+  fireEvent.click(
+    within(view.getByRole("region", { name: "Handoff alerts" })).getAllByRole(
+      "button",
+      { name: /Review week/ },
+    )[0],
+  );
+  assert.ok(screen.getByRole("heading", { name: "Weekly schedule" }));
+  assert.equal(screen.getByLabelText("Week of").value, "2026-06-15");
+  assert.ok(screen.getAllByText("Owen", { selector: "strong" }).length > 0);
+});
+
+test("Needs attention reports all clear when both campers have full care, known costs and no handoff alerts", async () => {
+  const store = getCampStore();
+  store.selectYear(2027);
+  const plan = store.getSeason(2027);
+  const entries = [0, 1].map((kid) => ({
+    id: `full-care-${kid}`,
+    name: `Full care ${kid}`,
+    kid,
+    start: "2027-06-14",
+    end: "2027-08-27",
+    location: "",
+    cost: 0,
+    paid: false,
+    status: "Confirmed",
+    type: "Grandparent",
+    dropoff: null,
+    pickup: null,
+  }));
+  store.mutate(2027, {
+    action: "restore",
+    revision: plan.revision,
+    plan: {
+      year: 2027,
+      kids: ["One", "Two"],
+      handoffBuffer: 30,
+      camps: entries,
+    },
+  });
+  render(createElement(CampPlanner));
+  await screen.findByRole("heading", { name: "Overview", exact: true });
+  await uiReady();
+  fireEvent.click(screen.getByRole("button", { name: /Needs attention/ }));
+  assert.ok(screen.getByRole("heading", { name: "Nothing needs attention" }));
+  assert.match(
+    screen.getByRole("button", { name: /Needs attention/ }).textContent,
+    /0$/,
+  );
+});
