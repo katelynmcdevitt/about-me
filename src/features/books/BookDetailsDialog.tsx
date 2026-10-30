@@ -39,6 +39,7 @@ export default function BookDetailsDialog({
   onClose,
   onSave,
   onAddReading,
+  onRetryCover,
 }: {
   book: Book;
   finishing?: boolean;
@@ -47,11 +48,14 @@ export default function BookDetailsDialog({
   error: string;
   onClose: () => void;
   onSave: (changes: EntryChanges) => Promise<boolean>;
+  onRetryCover: () => Promise<boolean | null>;
   onAddReading: (changes: EntryChanges) => Promise<boolean>;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const original = formFor(book);
   const [form, setForm] = useState(finishing ? { ...original, dateRead: new Date().toLocaleDateString("en-CA") } : original);
+  const [coverMessage, setCoverMessage] = useState("");
+  const [retryingCover, setRetryingCover] = useState(false);
   const [reread, setReread] = useState(false);
   const dirty = JSON.stringify(form) !== JSON.stringify(original);
   const change = <K extends keyof Form>(key: K, value: Form[K]) =>
@@ -168,6 +172,18 @@ export default function BookDetailsDialog({
           {!reread && (
             <>
               <h3>Book information</h3>
+              <div className="details-cover-action">
+                <button type="button" className="text-button" disabled={dirty || retryingCover} onClick={() => {
+                  setRetryingCover(true);
+                  setCoverMessage("");
+                  void onRetryCover().then(found => {
+                    setRetryingCover(false);
+                    if (found !== null) setCoverMessage(found ? "Cover refreshed." : "Couldn’t find a matching cover. Any saved cover has been kept; you can try again later.");
+                  });
+                }}>{retryingCover ? "Finding cover…" : "Retry cover"}</button>
+                {dirty && <p>Save your changes before retrying the cover.</p>}
+                {coverMessage && <p role="status">{coverMessage}</p>}
+              </div>
               <label>
                 Title
                 <input

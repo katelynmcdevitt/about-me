@@ -40,9 +40,11 @@ import BookDetailsDialog from "./BookDetailsDialog";
 import YearlyDashboard from "./YearlyDashboard";
 import { needsReadingFormat } from "./readingStats";
 
-function BookCover({ book, index }: { book: Book; index: number }) {
+function BookCover({ book, index, refresh = 0 }: { book: Book; index: number; refresh?: number }) {
   const [failed, setFailed] = useState(false);
-  const coverUrl = book.isbn
+  const coverUrl = book.coverId
+    ? `https://covers.openlibrary.org/b/id/${book.coverId}-M.jpg?default=false`
+    : book.isbn
     ? `https://covers.openlibrary.org/b/isbn/${book.isbn}-M.jpg?default=false`
     : "";
 
@@ -55,7 +57,7 @@ function BookCover({ book, index }: { book: Book; index: number }) {
       <span className="cover-author">{book.author}</span>
       {coverUrl && !failed && (
         <img
-          src={coverUrl}
+          src={refresh ? `${coverUrl}&refresh=${refresh}` : coverUrl}
           alt={`Cover of ${book.title}`}
           loading="lazy"
           onError={() => setFailed(true)}
@@ -70,6 +72,7 @@ function BooksApp() {
   const { books, categories: customCategories, imports } = db.library;
   const finishedBooks = books.filter(book => book.readingStatus !== "reading");
   const currentBooks = books.filter(book => book.readingStatus === "reading");
+  const [coverRefreshes, setCoverRefreshes] = useState<Record<string, number>>({});
   const [addingReading, setAddingReading] = useState(false);
   const [importSource, setImportSource] = useState<"goodreads" | "sheets">(
     "goodreads",
@@ -530,9 +533,14 @@ function BooksApp() {
                   (activeCategory === "All books" || book.category === activeCategory) &&
                   `${book.title} ${book.author} ${book.category} ${book.tags.join(" ")}`.toLowerCase().includes(query.trim().toLowerCase())
                 ).map(book => <li key={book.id}>
-                  <BookCover book={book} index={0} />
+                  <BookCover key={`${book.coverId ?? ""}-${book.isbn}-${coverRefreshes[book.id] ?? 0}`} book={book} index={0} refresh={coverRefreshes[book.id]} />
                   <div className="current-reading-info"><button className="text-button" onClick={() => { db.setError(""); setSelectedBook({ book: structuredClone(book), revision: db.library.revision }); }}>{book.title}</button><p>{book.author}</p><span>{book.format === "Unclear" ? "Format not set" : book.format}</span></div>
-                  <button className="text-button" onClick={() => { db.setError(""); setSelectedBook({ book: structuredClone(book), revision: db.library.revision, finishing: true }); }}>Mark finished</button>
+                  <div className="current-reading-actions">
+                    <button className="text-button" onClick={() => { db.setError(""); setSelectedBook({ book: structuredClone(book), revision: db.library.revision, finishing: true }); }}>Mark finished</button>
+                    <button className="text-button current-reading-delete" aria-label={`Delete ${book.title} from currently reading`} onClick={() => {
+                      if (window.confirm(`Delete “${book.title}” from Currently reading? Any earlier finished readings will be kept.`)) void db.deleteCurrentReading(book.id);
+                    }}>Delete</button>
+                  </div>
                 </li>)}</ul>
               )}
             </section>
@@ -837,7 +845,7 @@ function BooksApp() {
                   <div className="book-list">
                     {filteredBooks.map((book, index) => (
                       <article className="book-row" key={book.id}>
-                        <BookCover key={book.isbn} book={book} index={index} />
+                        <BookCover key={`${book.coverId ?? ""}-${book.isbn}-${coverRefreshes[book.id] ?? 0}`} book={book} index={index} refresh={coverRefreshes[book.id]} />
                         <div className="book-info">
                           <h3>
                             <button
@@ -1159,6 +1167,17 @@ function BooksApp() {
           onSave={(changes) =>
             db.saveEntry(selectedBook.book.id, changes, selectedBook.revision)
           }
+          onRetryCover={async () => {
+            const result = await db.refreshCover(selectedBook.book.id, selectedBook.revision);
+            if (!result) return null;
+            setCoverRefreshes(current => ({ ...current, [selectedBook.book.id]: Date.now() }));
+            setSelectedBook(current => current && current.book.id === selectedBook.book.id ? {
+              ...current,
+              book: result.library.books.find(book => book.id === current.book.id) ?? current.book,
+              revision: result.library.revision,
+            } : current);
+            return result.found;
+          }}
           onAddReading={(changes) =>
             db.addReading(selectedBook.book.id, changes, selectedBook.revision)
           }

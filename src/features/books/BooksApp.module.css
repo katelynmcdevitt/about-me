@@ -2371,13 +2371,13 @@
   color: var(--subtle);
   font-size: 12px;
 }
-.root :global(.current-reading-list li > .text-button) {
+.root :global(.current-reading-actions > .text-button) {
   flex-shrink: 0;
   padding: 8px 12px;
   border: 1px solid var(--line);
   border-radius: 4px;
 }
-.root :global(.current-reading-list li > .text-button:hover) {
+.root :global(.current-reading-actions > .text-button:hover) {
   border-color: var(--green);
 }
 @media (max-width: 620px) {
@@ -2394,8 +2394,21 @@
     grid-template-columns: 48px minmax(0, 1fr);
     gap: 12px;
   }
-  .root :global(.current-reading-list li > .text-button) {
+  .root :global(.current-reading-actions) {
     grid-column: 2;
     justify-self: start;
   }
+}
+
+.root :global(.current-reading-actions) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.root :global(.current-reading-actions > .current-reading-delete) {
+  color: var(--pink);
+}
+.root :global(.current-reading-actions > .current-reading-delete:hover) {
+  border-color: var(--pink);
 }

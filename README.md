@@ -373,3 +373,5 @@ write into your real database. React interactions use JSDOM; browser layout is
 not covered by those tests.
 
 Shelf Notes supports **Currently reading** at the top of the library. Use **Add currently reading** to save a title, author, and optional reading format. Select **Mark finished** to record a finish date and rating; it then joins your finished books and reading statistics. Currently reading books are included in library and database backups.
+
+When adding a currently reading book, Shelf Notes searches [Open Library](https://openlibrary.org/dev/docs/api/search) by title and author for a matching cover. The cover reference is saved locally and included in backups. Internet access is needed for lookup and images; missing covers or an unavailable service leave the placeholder in place without preventing a save.

@@ -23,6 +23,7 @@ import { normalizedDate, parseImport } from "./import-file";
 import { LibraryError } from "./errors";
 
 type CatalogBook = {
+  coverId?: number | null;
   id: string;
   title: string;
   author: string;
@@ -70,7 +71,7 @@ export class BooksStore {
     const version = Number(
       this.db.prepare("PRAGMA user_version").get()!.user_version,
     );
-    if (version > 4)
+    if (version > 5)
       throw new Error("This database was created by a newer app version.");
     if (version === 0)
       this.db.exec(`
@@ -153,6 +154,10 @@ export class BooksStore {
         PRAGMA user_version=4;`);
       this.incrementRevision();
     });
+    if (version < 5) this.transaction(() => {
+      this.db.exec("ALTER TABLE books ADD COLUMN cover_id INTEGER; PRAGMA user_version=5;");
+      this.incrementRevision();
+    });
   }
   close() {
     this.db.close();
@@ -187,7 +192,7 @@ export class BooksStore {
   private catalog(): CatalogBook[] {
     return this.db
       .prepare(
-        "SELECT id,title,author,isbn,goodreads_id AS goodreadsId,year,pages FROM books",
+        "SELECT id,title,author,isbn,goodreads_id AS goodreadsId,year,pages,cover_id AS coverId FROM books",
       )
       .all() as unknown as CatalogBook[];
   }
@@ -203,7 +208,7 @@ export class BooksStore {
     }
     return this.db
       .prepare(
-        `SELECT r.id,r.book_id AS catalogId,b.title,b.author,b.isbn,b.goodreads_id AS goodreadsId,b.year,b.pages,r.reading_status AS readingStatus,r.date_read AS dateRead,r.rating,r.format,r.kind,r.kind_source AS kindSource,r.kind_checked_at AS kindCheckedAt,c.name AS category,r.shelves_json
+        `SELECT r.id,r.book_id AS catalogId,b.title,b.author,b.isbn,b.goodreads_id AS goodreadsId,b.year,b.pages,b.cover_id AS coverId,r.reading_status AS readingStatus,r.date_read AS dateRead,r.rating,r.format,r.kind,r.kind_source AS kindSource,r.kind_checked_at AS kindCheckedAt,c.name AS category,r.shelves_json
       FROM reading_entries r JOIN books b ON b.id=r.book_id JOIN categories c ON c.id=r.category_id ORDER BY r.rowid`,
       )
       .all()
@@ -285,7 +290,7 @@ export class BooksStore {
         .run(entry.id, id);
     }
   }
-  startReading(changes: EntryChanges, revision: number): Library {
+  startReading(changes: EntryChanges, revision: number, coverId: number | null = null): Library {
     return this.transaction(() => {
       this.checkRevision(revision);
       if (!changes || typeof changes !== "object" ||
@@ -303,7 +308,37 @@ export class BooksStore {
         book = { id: randomUUID(), title: changes.title.trim(), author: changes.author.trim(), isbn: "", goodreadsId: "", year: null, pages: null };
         this.db.prepare("INSERT INTO books(id,title,author,isbn,goodreads_id,year,pages) VALUES(?,?,?,?,?,?,?)").run(book.id,book.title,book.author,book.isbn,book.goodreadsId,book.year,book.pages);
       }
+      if (!book.coverId && Number.isSafeInteger(coverId) && coverId! > 0) {
+        this.db.prepare("UPDATE books SET cover_id=? WHERE id=?").run(coverId, book.id);
+        book.coverId = coverId;
+      }
       this.writeReading({ ...book, id: randomUUID(), catalogId: book.id, readingStatus: "reading", dateRead: "", rating: 0, category: uncategorized, shelves: [], tags: [], format: changes.format ?? "Unclear", kind: "Unclear" });
+      this.incrementRevision();
+      return this.getLibrary();
+    });
+  }
+  refreshCover(id: string, coverId: number | null, revision: number): Library {
+    return this.transaction(() => {
+      this.checkRevision(revision);
+      const entry = this.readings().find(book => book.id === id);
+      if (!entry) throw new LibraryError("This reading entry no longer exists.", 404);
+      if (coverId !== null) {
+        if (!Number.isSafeInteger(coverId) || coverId <= 0) throw new LibraryError("Invalid cover.");
+        this.db.prepare("UPDATE books SET cover_id=? WHERE id=?").run(coverId, entry.catalogId);
+        this.incrementRevision();
+      }
+      return this.getLibrary();
+    });
+  }
+  deleteCurrentReading(id: string, revision: number): Library {
+    return this.transaction(() => {
+      this.checkRevision(revision);
+      const entry = this.readings().find(book => book.id === id);
+      if (!entry) throw new LibraryError("This reading entry no longer exists.", 404);
+      if (entry.readingStatus !== "reading")
+        throw new LibraryError("Only currently reading books can be deleted here.");
+      this.db.prepare("DELETE FROM reading_entries WHERE id=?").run(id);
+      this.db.prepare("DELETE FROM books WHERE id=? AND NOT EXISTS (SELECT 1 FROM reading_entries WHERE book_id=?)").run(entry.catalogId, entry.catalogId);
       this.incrementRevision();
       return this.getLibrary();
     });
@@ -641,6 +676,7 @@ export class BooksStore {
           goodreadsId,
           year: incoming.year,
           pages: incoming.pages,
+          coverId: incoming.coverId ?? null,
         };
         catalog.push(book);
         catalogWrites.set(book.id, book);
@@ -692,6 +728,7 @@ export class BooksStore {
           : book.goodreadsId || goodreadsId,
         year: book.year ?? incoming.year,
         pages: book.pages ?? incoming.pages,
+        coverId: book.coverId ?? incoming.coverId ?? null,
       };
       if (JSON.stringify(updatedBook) !== JSON.stringify(book)) {
         Object.assign(book, updatedBook);
@@ -717,6 +754,7 @@ export class BooksStore {
         author: book.author,
         year: book.year,
         pages: book.pages,
+        coverId: book.coverId ?? null,
         shelves: [
           ...new Set([...(previous?.shelves ?? []), ...incoming.shelves]),
         ],
@@ -900,7 +938,7 @@ export class BooksStore {
       for (const book of plan.catalog)
         this.db
           .prepare(
-            `INSERT INTO books(id,title,author,isbn,goodreads_id,year,pages) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET isbn=excluded.isbn,goodreads_id=excluded.goodreads_id,year=excluded.year,pages=excluded.pages`,
+            `INSERT INTO books(id,title,author,isbn,goodreads_id,year,pages,cover_id) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET isbn=excluded.isbn,goodreads_id=excluded.goodreads_id,year=excluded.year,pages=excluded.pages,cover_id=excluded.cover_id`,
           )
           .run(
             book.id,
@@ -910,6 +948,7 @@ export class BooksStore {
             book.goodreadsId,
             book.year,
             book.pages,
+            book.coverId ?? null,
           );
       for (const entry of plan.entries) this.writeReading(entry);
       this.db

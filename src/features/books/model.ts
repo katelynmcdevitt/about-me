@@ -2,6 +2,7 @@ import Papa from "papaparse";
 import { GOOGLE_SHEET_GIDS } from "./sheet";
 
 export type Book = {
+  coverId?: number | null;
   readingStatus?: "reading" | "finished";
   goodreadsId?: string;
   id: string;
@@ -730,6 +731,7 @@ export function normalizeBooks(value: unknown): Book[] {
     !value.every(
       (book) =>
         book &&
+        (book.coverId === undefined || book.coverId === null || (Number.isSafeInteger(book.coverId) && book.coverId > 0)) &&
         (book.readingStatus === undefined || ["reading", "finished"].includes(book.readingStatus)) &&
         typeof book.id === "string" &&
         typeof book.title === "string" &&

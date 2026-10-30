@@ -1025,3 +1025,82 @@ test("add currently reading saves above the library, survives reload, and can be
   assert.ok(!document.querySelector(".currently-reading").textContent.includes("In progress"));
   assert.equal(getBooksStore().getLibrary().books.find(book => book.title === "In progress").readingStatus, "finished");
 });
+
+test("adding a book finds and saves its cover and falls back when the image fails", async () => {
+  let searches = 0;
+  globalThis.fetch = async (url, init) => {
+    if (String(url).startsWith("https://openlibrary.org/search.json")) {
+      searches++;
+      return Response.json({ docs: [{ title: "Cover test", author_name: ["Writer"], cover_i: 777 }] });
+    }
+    return apiFetch(url, init);
+  };
+  render(createElement(BooksApp));
+  await waitFor(() => assert.ok(!document.querySelector('[aria-busy="true"]')));
+  fireEvent.click(screen.getByRole("button", { name: "Add currently reading" }));
+  const dialog = screen.getByRole("dialog");
+  fireEvent.change(within(dialog).getByLabelText("Title"), { target: { value: "Cover test" } });
+  fireEvent.change(within(dialog).getByLabelText("Author"), { target: { value: "Writer" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Add book" }));
+  await waitFor(() => assert.ok(!screen.queryByRole("dialog")));
+  const cover = screen.getByRole("img", { name: "Cover of Cover test" });
+  assert.match(cover.src, /\/b\/id\/777-M.jpg/);
+  assert.equal(searches, 1);
+  assert.equal(getBooksStore().getLibrary().books[0].coverId, 777);
+  fireEvent.error(cover);
+  assert.ok(!screen.queryByRole("img", { name: "Cover of Cover test" }));
+  assert.ok(screen.getByLabelText("Cover for Cover test"));
+});
+
+test("currently reading delete supports cancel, keeps failed saves, and persists deletion", async () => {
+  globalThis.fetch = apiFetch;
+  let library = getBooksStore().getLibrary();
+  getBooksStore().startReading({ title: "Delete test", author: "Writer" }, library.revision);
+  render(createElement(BooksApp));
+  const button = await screen.findByRole("button", { name: "Delete Delete test from currently reading" });
+  window.confirm = () => false;
+  fireEvent.click(button);
+  assert.equal(getBooksStore().getLibrary().books.length, 1);
+  window.confirm = () => true;
+  globalThis.fetch = async (url, init) => init?.method === "PATCH" ? Response.json({ error: "Database unavailable" }, { status: 500 }) : apiFetch(url, init);
+  fireEvent.click(button);
+  await screen.findByRole("alert");
+  assert.ok(screen.getByRole("button", { name: "Delete Delete test from currently reading" }));
+  assert.equal(getBooksStore().getLibrary().books.length, 1);
+  globalThis.fetch = apiFetch;
+  fireEvent.click(button);
+  await waitFor(() => assert.ok(!screen.queryByRole("button", { name: "Delete Delete test from currently reading" })));
+  assert.equal(getBooksStore().getLibrary().books.length, 0);
+  cleanup();
+  render(createElement(BooksApp));
+  await waitFor(() => assert.ok(!document.querySelector('[aria-busy="true"]')));
+  assert.ok(!screen.queryByRole("button", { name: "Delete Delete test from currently reading" }));
+});
+
+test("retry cover reloads a failed image even when the cover ID stays the same", async () => {
+  let library = getBooksStore().getLibrary();
+  getBooksStore().startReading({ title: "Retry test", author: "Writer" }, library.revision, 123);
+  globalThis.fetch = async (url, init) => String(url).startsWith("https://openlibrary.org/search.json")
+    ? Response.json({ docs: [{ title: "Retry test", author_name: ["Writer"], cover_i: 123 }] }) : apiFetch(url, init);
+  render(createElement(BooksApp));
+  const image = await screen.findByRole("img", { name: "Cover of Retry test" });
+  fireEvent.error(image);
+  assert.ok(!screen.queryByRole("img", { name: "Cover of Retry test" }));
+  assert.ok(!screen.queryByRole("button", { name: "Retry cover" }));
+  fireEvent.click(screen.getByRole("button", { name: "Retry test" }));
+  fireEvent.click(screen.getByRole("button", { name: "Retry cover" }));
+  const refreshed = await screen.findByRole("img", { name: "Cover of Retry test" });
+  assert.match(refreshed.src, /refresh=\d+/);
+  assert.match((await screen.findByRole("status")).textContent, /Cover refreshed/);
+  globalThis.fetch = async (url, init) => String(url).startsWith("https://openlibrary.org/search.json")
+    ? Response.json({ docs: [] }) : apiFetch(url, init);
+  fireEvent.click(screen.getByRole("button", { name: "Retry cover" }));
+  await waitFor(() => assert.match(screen.getByRole("status").textContent, /Couldn’t find/));
+  assert.equal(getBooksStore().getLibrary().books[0].coverId, 123);
+  const dialog = screen.getByRole("dialog");
+  fireEvent.change(within(dialog).getByLabelText("Title"), { target: { value: "Updated title" } });
+  assert.equal(within(dialog).getByRole("button", { name: "Retry cover" }).disabled, true);
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save changes" }));
+  await waitFor(() => assert.ok(!screen.queryByRole("dialog")));
+  assert.equal(getBooksStore().getLibrary().books[0].title, "Updated title");
+});
