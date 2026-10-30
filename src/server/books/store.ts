@@ -70,7 +70,7 @@ export class BooksStore {
     const version = Number(
       this.db.prepare("PRAGMA user_version").get()!.user_version,
     );
-    if (version > 3)
+    if (version > 4)
       throw new Error("This database was created by a newer app version.");
     if (version === 0)
       this.db.exec(`
@@ -145,6 +145,14 @@ export class BooksStore {
         if (changed) this.incrementRevision();
         this.db.exec("PRAGMA user_version=3");
       });
+    if (version < 4) this.transaction(() => {
+      this.db.exec(`ALTER TABLE reading_entries ADD COLUMN reading_status TEXT NOT NULL DEFAULT 'finished' CHECK(reading_status IN ('reading','finished'));
+        DROP INDEX reading_dates;
+        CREATE UNIQUE INDEX reading_dates ON reading_entries(book_id,date_read) WHERE reading_status='finished';
+        CREATE UNIQUE INDEX current_reading ON reading_entries(book_id) WHERE reading_status='reading';
+        PRAGMA user_version=4;`);
+      this.incrementRevision();
+    });
   }
   close() {
     this.db.close();
@@ -195,7 +203,7 @@ export class BooksStore {
     }
     return this.db
       .prepare(
-        `SELECT r.id,r.book_id AS catalogId,b.title,b.author,b.isbn,b.goodreads_id AS goodreadsId,b.year,b.pages,r.date_read AS dateRead,r.rating,r.format,r.kind,r.kind_source AS kindSource,r.kind_checked_at AS kindCheckedAt,c.name AS category,r.shelves_json
+        `SELECT r.id,r.book_id AS catalogId,b.title,b.author,b.isbn,b.goodreads_id AS goodreadsId,b.year,b.pages,r.reading_status AS readingStatus,r.date_read AS dateRead,r.rating,r.format,r.kind,r.kind_source AS kindSource,r.kind_checked_at AS kindCheckedAt,c.name AS category,r.shelves_json
       FROM reading_entries r JOIN books b ON b.id=r.book_id JOIN categories c ON c.id=r.category_id ORDER BY r.rowid`,
       )
       .all()
@@ -244,8 +252,8 @@ export class BooksStore {
     const category = this.categoryId(entry.category || uncategorized);
     this.db
       .prepare(
-        `INSERT INTO reading_entries(id,book_id,date_read,rating,format,kind,kind_source,kind_checked_at,category_id,shelves_json) VALUES(?,?,?,?,?,?,?,?,?,?)
-      ON CONFLICT(id) DO UPDATE SET date_read=excluded.date_read,rating=excluded.rating,format=excluded.format,kind=excluded.kind,kind_source=excluded.kind_source,kind_checked_at=excluded.kind_checked_at,category_id=excluded.category_id,shelves_json=excluded.shelves_json`,
+        `INSERT INTO reading_entries(id,book_id,date_read,rating,format,kind,kind_source,kind_checked_at,category_id,shelves_json,reading_status) VALUES(?,?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(id) DO UPDATE SET reading_status=excluded.reading_status,date_read=excluded.date_read,rating=excluded.rating,format=excluded.format,kind=excluded.kind,kind_source=excluded.kind_source,kind_checked_at=excluded.kind_checked_at,category_id=excluded.category_id,shelves_json=excluded.shelves_json`,
       )
       .run(
         entry.id,
@@ -258,6 +266,7 @@ export class BooksStore {
         entry.kindCheckedAt ?? 0,
         category,
         JSON.stringify(entry.shelves),
+        entry.readingStatus ?? "finished",
       );
     this.db.prepare("DELETE FROM reading_tags WHERE entry_id=?").run(entry.id);
     for (const tag of entry.tags) {
@@ -275,6 +284,29 @@ export class BooksStore {
         )
         .run(entry.id, id);
     }
+  }
+  startReading(changes: EntryChanges, revision: number): Library {
+    return this.transaction(() => {
+      this.checkRevision(revision);
+      if (!changes || typeof changes !== "object" ||
+          typeof changes.title !== "string" || !changes.title.trim() || changes.title.length > 2000 ||
+          typeof changes.author !== "string" || !changes.author.trim() || changes.author.length > 1000)
+        throw new LibraryError("Enter a title and author.");
+      if (changes.format !== undefined && !["Unclear", "Audio", "Physical", "Kindle"].includes(changes.format))
+        throw new LibraryError("Invalid reading format.");
+      const matches = this.catalog().filter(book => identity(book.title, book.author) === identity(changes.title!, changes.author!));
+      if (matches.length > 1) throw new LibraryError("Multiple books match this title and author. Use a distinct title.");
+      let book = matches[0];
+      if (book && this.readings().some(entry => entry.catalogId === book.id && entry.readingStatus === "reading"))
+        throw new LibraryError("This book is already in Currently reading.");
+      if (!book) {
+        book = { id: randomUUID(), title: changes.title.trim(), author: changes.author.trim(), isbn: "", goodreadsId: "", year: null, pages: null };
+        this.db.prepare("INSERT INTO books(id,title,author,isbn,goodreads_id,year,pages) VALUES(?,?,?,?,?,?,?)").run(book.id,book.title,book.author,book.isbn,book.goodreadsId,book.year,book.pages);
+      }
+      this.writeReading({ ...book, id: randomUUID(), catalogId: book.id, readingStatus: "reading", dateRead: "", rating: 0, category: uncategorized, shelves: [], tags: [], format: changes.format ?? "Unclear", kind: "Unclear" });
+      this.incrementRevision();
+      return this.getLibrary();
+    });
   }
   updateEntry(id: string, changes: EntryChanges, revision: number): Library {
     return this.editReading(id, changes, revision, false);
@@ -310,6 +342,7 @@ export class BooksStore {
               "pages",
               "rating",
               "dateRead",
+              "readingStatus",
             ].includes(key),
         )
       )
@@ -416,21 +449,29 @@ export class BooksStore {
         throw new LibraryError(
           "Use a valid finish date in YYYY-MM-DD or YYYY-MM format.",
         );
+      if (changes.readingStatus !== undefined && !["reading", "finished"].includes(changes.readingStatus))
+        throw new LibraryError("Invalid reading status.");
+      if (changes.readingStatus === "reading" && entry.readingStatus !== "reading")
+        throw new LibraryError("Use Add currently reading to start a book.");
       const edited: Reading = {
         ...entry,
-        ...(create ? { id: randomUUID(), dateRead: "", rating: 0 } : {}),
+        ...(create ? { id: randomUUID(), dateRead: "", rating: 0, readingStatus: "finished" as const } : {}),
         ...changes,
         isbn,
       };
       edited.title = edited.title.trim();
       edited.author = edited.author.trim();
       edited.dateRead = normalizedDate(edited.dateRead)!;
+      if (entry.readingStatus === "reading" && edited.readingStatus === "finished" && !edited.dateRead)
+        throw new LibraryError("Add a finish date for this book.");
+      if (edited.readingStatus === "reading" && (edited.dateRead || edited.rating))
+        throw new LibraryError("Mark this book finished before adding a finish date or rating.");
       if (create && !edited.dateRead)
         throw new LibraryError("Add a finish date for the reread.");
-      if (
+      if (edited.readingStatus !== "reading" &&
         this.db
           .prepare(
-            "SELECT id FROM reading_entries WHERE book_id=? AND date_read=? AND id<>?",
+            "SELECT id FROM reading_entries WHERE reading_status='finished' AND book_id=? AND date_read=? AND id<>?",
           )
           .get(entry.catalogId, edited.dateRead, edited.id)
       )
@@ -604,11 +645,13 @@ export class BooksStore {
         catalog.push(book);
         catalogWrites.set(book.id, book);
       }
-      const reads = entries.filter((e) => e.catalogId === book.id);
+      const reads = entries.filter((e) => e.catalogId === book.id && (e.readingStatus ?? "finished") === (incoming.readingStatus ?? "finished"));
       let previous =
         selected && !incoming.dateRead
           ? selected
           : reads.find((e) => e.dateRead === incoming.dateRead);
+      if (!previous && incoming.dateRead && incoming.readingStatus !== "reading")
+        previous = entries.find(e => e.catalogId === book.id && e.readingStatus === "reading");
       if (
         !previous &&
         (!incoming.dateRead || (reads.length === 1 && !reads[0].dateRead))
@@ -665,6 +708,7 @@ export class BooksStore {
       ];
       const entry: Reading = {
         ...incoming,
+        readingStatus: incoming.readingStatus ?? "finished",
         id: previous?.id ?? randomUUID(),
         catalogId: book.id,
         isbn: book.isbn,

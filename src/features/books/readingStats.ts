@@ -10,6 +10,7 @@ function finishMonth(book: Book) {
   return { year: match[1], month: Number(match[2]) - 1 };
 }
 export function yearlyReadingSummary(books: Book[], year: string) {
+  books = books.filter(book => book.readingStatus !== "reading");
   const finished = books.filter((book) => finishMonth(book)?.year === year);
   const withPages = finished.filter(
     (book) =>

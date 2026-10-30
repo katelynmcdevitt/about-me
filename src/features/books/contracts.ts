@@ -54,6 +54,7 @@ export type ImportInput = {
   backup?: unknown;
 };
 export type EntryChanges = {
+  readingStatus?: "reading" | "finished";
   title?: string;
   author?: string;
   isbn?: string;

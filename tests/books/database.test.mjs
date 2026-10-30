@@ -558,7 +558,7 @@ test("format migration repairs known category and shelf labels once and preserve
   oldDb
     .prepare("UPDATE reading_entries SET format='Unclear' WHERE id IN (?,?)")
     .run(audioId, shelfId);
-  oldDb.exec("PRAGMA user_version=1");
+  oldDb.exec("DROP INDEX current_reading; DROP INDEX reading_dates; ALTER TABLE reading_entries DROP COLUMN reading_status; CREATE UNIQUE INDEX reading_dates ON reading_entries(book_id,date_read); PRAGMA user_version=1");
   oldDb.close();
   legacy = new BooksStore(file);
   library = legacy.getLibrary();
@@ -608,7 +608,7 @@ test("provider category mapping updates version-2 libraries once and allows late
   libraryStore.close();
   const oldDb = new DatabaseSync(file);
   oldDb.exec(
-    "UPDATE reading_entries SET format='Unclear' WHERE format='Audio'; PRAGMA user_version=2",
+    "UPDATE reading_entries SET format='Unclear' WHERE format='Audio'; DROP INDEX current_reading; DROP INDEX reading_dates; ALTER TABLE reading_entries DROP COLUMN reading_status; CREATE UNIQUE INDEX reading_dates ON reading_entries(book_id,date_read); PRAGMA user_version=2",
   );
   oldDb.close();
   libraryStore = new BooksStore(file);
@@ -627,4 +627,46 @@ test("provider category mapping updates version-2 libraries once and allows late
   libraryStore = new BooksStore(file);
   assert.equal(libraryStore.getLibrary().books[0].format, "Kindle");
   libraryStore.close();
+});
+
+test("currently reading persists, reuses a finished book, and finishes with a required date", () => {
+  let library = confirm();
+  const finished = library.books[0];
+  library = store.startReading({ title: finished.title, author: finished.author, format: "Kindle" }, library.revision);
+  const current = library.books.find(book => book.readingStatus === "reading");
+  assert.equal(library.books.length, 2);
+  assert.equal(current.isbn, finished.isbn);
+  assert.equal(current.dateRead, "");
+  assert.throws(() => store.startReading({ title: finished.title, author: finished.author }, library.revision), /already in Currently reading/);
+  assert.throws(() => store.updateEntry(current.id, { readingStatus: "finished" }, library.revision), /finish date/);
+  assert.throws(() => store.updateEntry(current.id, { readingStatus: "finished", dateRead: finished.dateRead }, library.revision), /already has a reading/);
+  library = store.updateEntry(current.id, { readingStatus: "finished", dateRead: "2026-10-30", rating: 4 }, library.revision);
+  assert.equal(library.books.filter(book => book.readingStatus === "reading").length, 0);
+  assert.equal(library.books.find(book => book.id === current.id).rating, 4);
+});
+
+test("currently reading survives database reopen and library backup restore", () => {
+  const file = join(root, "current.sqlite");
+  let durable = new BooksStore(file);
+  let library = durable.startReading({ title: "New book", author: "New writer", format: "Audio" }, durable.getLibrary().revision);
+  durable.close();
+  durable = new BooksStore(file);
+  assert.deepEqual(durable.getLibrary().books, library.books);
+  durable.close();
+  const preview = store.previewImport({ source: "backup", filename: "library.json", backup: { version: 1, books: library.books, categories: [], isDemo: false, lastSyncedAt: "" } });
+  library = store.confirmImport(preview.id);
+  assert.equal(library.books[0].readingStatus, "reading");
+  assert.equal(library.books[0].format, "Audio");
+  const again = store.previewImport({ source: "backup", filename: "library.json", backup: { version: 1, books: library.books, categories: [], isDemo: false, lastSyncedAt: "" } });
+  assert.equal(again.summary.unchanged, 1);
+});
+
+test("a finished import completes the current reading without duplicating it", () => {
+  let library = store.startReading({ title: "My book", author: "Writer", format: "Kindle" }, store.getLibrary().revision);
+  const id = library.books[0].id;
+  library = confirm();
+  assert.equal(library.books.length, 1);
+  assert.equal(library.books[0].id, id);
+  assert.equal(library.books[0].readingStatus, "finished");
+  assert.equal(library.books[0].dateRead, "2026-10-01");
 });

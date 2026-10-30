@@ -119,6 +119,11 @@ export function useLibrary() {
     if (result) setLibrary(result);
     return !!result;
   }
+  async function startReading(changes: EntryChanges) {
+    const result = await perform<Library>("/api/books/library", { action: "startReading", changes, revision: libraryRef.current.revision }, "PATCH");
+    if (result) setLibrary(result);
+    return !!result;
+  }
   async function addCategory(name: string) {
     const result = await perform<Library>(
       "/api/books/library",
@@ -162,6 +167,7 @@ export function useLibrary() {
     preview,
     setPreview,
     saveEntry,
+    startReading,
     addReading,
     addCategory,
     previewInput,

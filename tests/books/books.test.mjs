@@ -542,7 +542,7 @@ test("local writes accept the actual Host when Next normalizes the URL to localh
   const request = new Request(
     "http://localhost:3000/api/books/library",
     jsonRequest(
-      { action: "addCategory", name: "Host test", revision: 0 },
+      { action: "addCategory", name: "Host test", revision: getBooksStore().getLibrary().revision },
       "PATCH",
       { Host: "127.0.0.1:3000", Origin: "http://127.0.0.1:3000" },
     ),
@@ -996,4 +996,32 @@ test("yearly dashboard handles an empty library without implying that undated bo
       dashboard.getByRole("article", { name: "Average rating" }),
     ).getByText("—"),
   );
+});
+
+test("add currently reading saves above the library, survives reload, and can be finished", async () => {
+  globalThis.fetch = apiFetch;
+  await seed();
+  render(createElement(BooksApp));
+  await screen.findByRole("heading", { name: "Imported book" });
+  fireEvent.click(screen.getByRole("button", { name: "Add currently reading" }));
+  let dialog = screen.getByRole("dialog");
+  fireEvent.change(within(dialog).getByLabelText("Title"), { target: { value: "In progress" } });
+  fireEvent.change(within(dialog).getByLabelText("Author"), { target: { value: "Another writer" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Add book" }));
+  await waitFor(() => assert.ok(!screen.queryByRole("dialog")));
+  assert.equal(getBooksStore().getLibrary().books.find(book => book.title === "In progress").readingStatus, "reading");
+  let section = document.querySelector(".currently-reading");
+  assert.match(section.textContent, /In progress/);
+  assert.ok(section.compareDocumentPosition(document.querySelector(".stats-row")) & 4);
+  cleanup();
+  render(createElement(BooksApp));
+  await screen.findByRole("button", { name: "In progress" });
+  fireEvent.click(screen.getByRole("button", { name: "Mark finished" }));
+  dialog = screen.getByRole("dialog");
+  fireEvent.change(within(dialog).getByLabelText("Finished date"), { target: { value: "2026-10-30" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Mark finished" }));
+  await waitFor(() => assert.ok(!screen.queryByRole("dialog")));
+  await screen.findByRole("heading", { name: "In progress" });
+  assert.ok(!document.querySelector(".currently-reading").textContent.includes("In progress"));
+  assert.equal(getBooksStore().getLibrary().books.find(book => book.title === "In progress").readingStatus, "finished");
 });

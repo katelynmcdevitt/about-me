@@ -35,6 +35,7 @@ import type { Book, BookKind } from "./model";
 import type { ImportSource } from "./contracts";
 import { useLibrary } from "./useLibrary";
 import ImportPreviewDialog from "./ImportPreviewDialog";
+import AddReadingDialog from "./AddReadingDialog";
 import BookDetailsDialog from "./BookDetailsDialog";
 import YearlyDashboard from "./YearlyDashboard";
 import { needsReadingFormat } from "./readingStats";
@@ -67,6 +68,9 @@ function BookCover({ book, index }: { book: Book; index: number }) {
 function BooksApp() {
   const db = useLibrary();
   const { books, categories: customCategories, imports } = db.library;
+  const finishedBooks = books.filter(book => book.readingStatus !== "reading");
+  const currentBooks = books.filter(book => book.readingStatus === "reading");
+  const [addingReading, setAddingReading] = useState(false);
   const [importSource, setImportSource] = useState<"goodreads" | "sheets">(
     "goodreads",
   );
@@ -105,6 +109,7 @@ function BooksApp() {
   const [selectedBook, setSelectedBook] = useState<{
     book: Book;
     revision: number;
+    finishing?: boolean;
   } | null>(null);
   const [query, setQuery] = useState("");
   const [sortBy, setSortBy] = useState("recent");
@@ -127,6 +132,7 @@ function BooksApp() {
   const filteredBooks = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     return books
+      .filter(book => isQueue || book.readingStatus !== "reading")
       .filter(
         (book) => !needsClassification || !book.kind || book.kind === "Unclear",
       )
@@ -152,9 +158,9 @@ function BooksApp() {
           a.title.localeCompare(b.title)
         );
       });
-  }, [activeCategory, books, query, sortBy, needsClassification, needsFormat]);
+  }, [activeCategory, books, query, sortBy, needsClassification, needsFormat, isQueue]);
 
-  const ratedBooks = books.filter((book) => book.rating > 0);
+  const ratedBooks = finishedBooks.filter((book) => book.rating > 0);
   const averageRating = ratedBooks.length
     ? (
         ratedBooks.reduce((sum, book) => sum + book.rating, 0) /
@@ -171,13 +177,13 @@ function BooksApp() {
   const readingYear = readingYears.includes(selectedReadingYear)
     ? selectedReadingYear
     : (readingYears[0] ?? "");
-  const overallMix = bookMix(books);
+  const overallMix = bookMix(finishedBooks);
   const yearlyMix = bookMix(
-    books.filter((book) => book.dateRead.startsWith(readingYear)),
+    finishedBooks.filter((book) => book.dateRead.startsWith(readingYear)),
   );
-  const overallFormatMix = formatMix(books);
+  const overallFormatMix = formatMix(finishedBooks);
   const yearlyFormatMix = formatMix(
-    books.filter((book) => book.dateRead.startsWith(readingYear)),
+    finishedBooks.filter((book) => book.dateRead.startsWith(readingYear)),
   );
 
   function updateCategory(id: string, category: string) {
@@ -513,9 +519,28 @@ function BooksApp() {
             </div>
           )}
 
+          {libraryView === "all" && (
+            <section className="currently-reading" aria-labelledby="currently-reading-title">
+              <div className="collection-heading">
+                <h2 id="currently-reading-title">Currently reading <span className="heading-count">{currentBooks.length}</span></h2>
+                <button className="import-button" onClick={() => { db.setError(""); setAddingReading(true); }}><Plus size={16} /> Add currently reading</button>
+              </div>
+              {currentBooks.length === 0 ? <p>Add a book you’ve started to keep it here while you read.</p> : (
+                <ul className="current-reading-list">{currentBooks.filter(book =>
+                  (activeCategory === "All books" || book.category === activeCategory) &&
+                  `${book.title} ${book.author} ${book.category} ${book.tags.join(" ")}`.toLowerCase().includes(query.trim().toLowerCase())
+                ).map(book => <li key={book.id}>
+                  <BookCover book={book} index={0} />
+                  <div className="current-reading-info"><button className="text-button" onClick={() => { db.setError(""); setSelectedBook({ book: structuredClone(book), revision: db.library.revision }); }}>{book.title}</button><p>{book.author}</p><span>{book.format === "Unclear" ? "Format not set" : book.format}</span></div>
+                  <button className="text-button" onClick={() => { db.setError(""); setSelectedBook({ book: structuredClone(book), revision: db.library.revision, finishing: true }); }}>Mark finished</button>
+                </li>)}</ul>
+              )}
+            </section>
+          )}
+
           {libraryView === "yearly" ? (
             <YearlyDashboard
-              books={books}
+              books={finishedBooks}
               year={readingYear}
               years={readingYears}
               onChangeYear={setSelectedReadingYear}
@@ -534,7 +559,7 @@ function BooksApp() {
                     aria-label="Library statistics"
                   >
                     <div className="stat-item">
-                      <span className="stat-number">{books.length}</span>
+                      <span className="stat-number">{finishedBooks.length}</span>
                       <span className="stat-label">books read</span>
                     </div>
                     <span className="stat-divider" />
@@ -581,7 +606,7 @@ function BooksApp() {
                         {
                           label: "Overall",
                           mix: overallMix,
-                          total: books.length,
+                          total: finishedBooks.length,
                         },
                         {
                           label: readingYear || "Selected year",
@@ -665,7 +690,7 @@ function BooksApp() {
                         {
                           label: "Overall",
                           mix: overallFormatMix,
-                          total: books.length,
+                          total: finishedBooks.length,
                         },
                         {
                           label: readingYear || "Selected year",
@@ -1078,7 +1103,7 @@ function BooksApp() {
 
                 <footer className="list-footer">
                   <span>
-                    {filteredBooks.length} of {books.length} books
+                    {filteredBooks.length} of {isQueue ? books.length : finishedBooks.length} {isQueue ? "books" : "finished books"}
                   </span>
                   <div className="backup-actions">
                     <button onClick={exportBackup}>
@@ -1119,9 +1144,11 @@ function BooksApp() {
           )}
         </main>
       </fieldset>
+      {addingReading && <AddReadingDialog busy={db.busy} error={db.error} onClose={() => { setAddingReading(false); db.setError(""); }} onSave={db.startReading} />}
       {selectedBook && (
         <BookDetailsDialog
           book={selectedBook.book}
+          finishing={selectedBook.finishing}
           categories={categories}
           busy={db.busy}
           error={db.error}

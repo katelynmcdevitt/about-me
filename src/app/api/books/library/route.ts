@@ -24,6 +24,8 @@ export async function PATCH(request: Request) {
     if (!body || typeof body !== "object")
       throw new LibraryError("Invalid library edit.");
     const store = getBooksStore();
+    if (body.action === "startReading" && body.changes && typeof body.revision === "number")
+      return Response.json(store.startReading(body.changes, body.revision), { headers: noCache });
     if (
       (body.action === "updateEntry" || body.action === "addReading") &&
       typeof body.id === "string" &&

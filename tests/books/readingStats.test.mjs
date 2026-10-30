@@ -86,3 +86,10 @@ test("empty years and unrated books have no fabricated averages or percentages",
   assert.equal(needsReadingFormat(reading({ format: undefined })), true);
   assert.equal(needsReadingFormat(reading({ format: "Kindle" })), false);
 });
+
+test("currently reading is excluded from finished totals and missing-data counts", () => {
+  const summary = yearlyReadingSummary([reading({ readingStatus: "reading", dateRead: "", rating: 0, format: "Unclear" })], "2026");
+  assert.equal(summary.finished, 0);
+  assert.equal(summary.undated, 0);
+  assert.equal(summary.unknownFormats, 0);
+});

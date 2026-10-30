@@ -2304,3 +2304,98 @@
     flex-wrap: wrap;
   }
 }
+
+.root :global(.currently-reading) {
+  margin: 10px 0;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+.root :global(.currently-reading .collection-heading) {
+  align-items: center;
+  flex-wrap: wrap;
+}
+.root :global(.currently-reading h2) {
+  font-size: 24px;
+}
+.root :global(.currently-reading > p) {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.root :global(.current-reading-list) {
+  display: grid;
+  gap: 16px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.root :global(.current-reading-list li) {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.root :global(.current-reading-list .book-cover) {
+  flex-shrink: 0;
+}
+.root :global(.current-reading-info) {
+  flex: 1;
+  min-width: 0;
+}
+.root :global(.current-reading-info > .text-button) {
+  padding: 0;
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.4;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.root :global(.current-reading-info > .text-button:hover) {
+  color: var(--green);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.root :global(.current-reading-info p) {
+  margin: 4px 0 6px;
+  color: var(--muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.root :global(.current-reading-info span) {
+  color: var(--subtle);
+  font-size: 12px;
+}
+.root :global(.current-reading-list li > .text-button) {
+  flex-shrink: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+.root :global(.current-reading-list li > .text-button:hover) {
+  border-color: var(--green);
+}
+@media (max-width: 620px) {
+  .root :global(.currently-reading) {
+    padding: 18px;
+  }
+  .root :global(.currently-reading .collection-heading) {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .root :global(.current-reading-list li) {
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr);
+    gap: 12px;
+  }
+  .root :global(.current-reading-list li > .text-button) {
+    grid-column: 2;
+    justify-self: start;
+  }
+}

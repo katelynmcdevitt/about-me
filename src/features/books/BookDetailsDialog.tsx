@@ -32,6 +32,7 @@ const formFor = (book: Book): Form => ({
 
 export default function BookDetailsDialog({
   book,
+  finishing = false,
   categories,
   busy,
   error,
@@ -40,6 +41,7 @@ export default function BookDetailsDialog({
   onAddReading,
 }: {
   book: Book;
+  finishing?: boolean;
   categories: string[];
   busy: boolean;
   error: string;
@@ -49,7 +51,7 @@ export default function BookDetailsDialog({
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const original = formFor(book);
-  const [form, setForm] = useState(original);
+  const [form, setForm] = useState(finishing ? { ...original, dateRead: new Date().toLocaleDateString("en-CA") } : original);
   const [reread, setReread] = useState(false);
   const dirty = JSON.stringify(form) !== JSON.stringify(original);
   const change = <K extends keyof Form>(key: K, value: Form[K]) =>
@@ -69,6 +71,7 @@ export default function BookDetailsDialog({
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const values: EntryChanges = {
+      ...(finishing ? { readingStatus: "finished" as const } : {}),
       title: form.title.trim(),
       author: form.author.trim(),
       isbn: form.isbn.trim(),
@@ -138,7 +141,7 @@ export default function BookDetailsDialog({
         <X size={20} />
       </button>
       <h2 id="book-details-title">
-        {reread ? "Record a reread" : "Book details"}
+        {finishing ? "Finish reading" : reread ? "Record a reread" : "Book details"}
       </h2>
       <p>
         {reread
@@ -219,6 +222,7 @@ export default function BookDetailsDialog({
             </>
           )}
           <h3>Reading details</h3>
+          {(book.readingStatus !== "reading" || finishing) && <>
           <div className="details-row">
             <label>
               Rating
@@ -234,7 +238,7 @@ export default function BookDetailsDialog({
             <label>
               Finished date
               <input
-                required={reread}
+                required={reread || finishing}
                 value={form.dateRead}
                 maxLength={10}
                 placeholder="YYYY-MM-DD or YYYY-MM"
@@ -249,6 +253,7 @@ export default function BookDetailsDialog({
               ? "Rereads need a distinct finish date; a year and month is enough."
               : "Dates can include just a year and month; leave blank if unknown."}
           </p>
+          </>}
           <div className="details-row">
             <label>
               Reading format
@@ -305,10 +310,10 @@ export default function BookDetailsDialog({
               Cancel
             </button>
             <button type="submit" className="import-button">
-              {busy ? "Saving…" : reread ? "Save reread" : "Save changes"}
+              {busy ? "Saving…" : finishing ? "Mark finished" : reread ? "Save reread" : "Save changes"}
             </button>
           </div>
-          {!reread && (
+          {!reread && book.readingStatus !== "reading" && (
             <div className="reread-action">
               <button
                 type="button"

@@ -371,3 +371,5 @@ preservation, stale revisions, invalid requests, transaction rollback, restart
 persistence, SQLite backups, and React import/edit/migration flows. Tests do not
 write into your real database. React interactions use JSDOM; browser layout is
 not covered by those tests.
+
+Shelf Notes supports **Currently reading** at the top of the library. Use **Add currently reading** to save a title, author, and optional reading format. Select **Mark finished** to record a finish date and rating; it then joins your finished books and reading statistics. Currently reading books are included in library and database backups.
