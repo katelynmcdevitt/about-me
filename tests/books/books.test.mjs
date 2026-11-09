@@ -542,7 +542,11 @@ test("local writes accept the actual Host when Next normalizes the URL to localh
   const request = new Request(
     "http://localhost:3000/api/books/library",
     jsonRequest(
-      { action: "addCategory", name: "Host test", revision: getBooksStore().getLibrary().revision },
+      {
+        action: "addCategory",
+        name: "Host test",
+        revision: getBooksStore().getLibrary().revision,
+      },
       "PATCH",
       { Host: "127.0.0.1:3000", Origin: "http://127.0.0.1:3000" },
     ),
@@ -943,7 +947,9 @@ test("yearly dashboard changes years, reports missing data, and links to the for
     ).getByText("4.0"),
   );
   assert.ok(dashboard.getByRole("listitem", { name: "Jan: 1 book" }));
-  const pagesChart = within(dashboard.getByRole("region", { name: "Pages read by month" }));
+  const pagesChart = within(
+    dashboard.getByRole("region", { name: "Pages read by month" }),
+  );
   assert.equal(pagesChart.getAllByRole("listitem").length, 12);
   assert.ok(pagesChart.getByRole("listitem", { name: "Jan: 100 pages" }));
   assert.ok(pagesChart.getByRole("listitem", { name: "Feb: 0 pages" }));
@@ -1009,27 +1015,53 @@ test("add currently reading saves above the library, survives reload, and can be
   await seed();
   render(createElement(BooksApp));
   await screen.findByRole("heading", { name: "Imported book" });
-  fireEvent.click(screen.getByRole("button", { name: "Add currently reading" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Add currently reading" }),
+  );
   let dialog = screen.getByRole("dialog");
-  fireEvent.change(within(dialog).getByLabelText("Title"), { target: { value: "In progress" } });
-  fireEvent.change(within(dialog).getByLabelText("Author"), { target: { value: "Another writer" } });
+  fireEvent.change(within(dialog).getByLabelText("Title"), {
+    target: { value: "In progress" },
+  });
+  fireEvent.change(within(dialog).getByLabelText("Author"), {
+    target: { value: "Another writer" },
+  });
   fireEvent.click(within(dialog).getByRole("button", { name: "Add book" }));
   await waitFor(() => assert.ok(!screen.queryByRole("dialog")));
-  assert.equal(getBooksStore().getLibrary().books.find(book => book.title === "In progress").readingStatus, "reading");
+  assert.equal(
+    getBooksStore()
+      .getLibrary()
+      .books.find((book) => book.title === "In progress").readingStatus,
+    "reading",
+  );
   let section = document.querySelector(".currently-reading");
   assert.match(section.textContent, /In progress/);
-  assert.ok(section.compareDocumentPosition(document.querySelector(".stats-row")) & 4);
+  assert.ok(
+    section.compareDocumentPosition(document.querySelector(".stats-row")) & 4,
+  );
   cleanup();
   render(createElement(BooksApp));
   await screen.findByRole("button", { name: "In progress" });
   fireEvent.click(screen.getByRole("button", { name: "Mark finished" }));
   dialog = screen.getByRole("dialog");
-  fireEvent.change(within(dialog).getByLabelText("Finished date"), { target: { value: "2026-10-30" } });
-  fireEvent.click(within(dialog).getByRole("button", { name: "Mark finished" }));
+  fireEvent.change(within(dialog).getByLabelText("Finished date"), {
+    target: { value: "2026-10-30" },
+  });
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Mark finished" }),
+  );
   await waitFor(() => assert.ok(!screen.queryByRole("dialog")));
   await screen.findByRole("heading", { name: "In progress" });
-  assert.ok(!document.querySelector(".currently-reading").textContent.includes("In progress"));
-  assert.equal(getBooksStore().getLibrary().books.find(book => book.title === "In progress").readingStatus, "finished");
+  assert.ok(
+    !document
+      .querySelector(".currently-reading")
+      .textContent.includes("In progress"),
+  );
+  assert.equal(
+    getBooksStore()
+      .getLibrary()
+      .books.find((book) => book.title === "In progress").readingStatus,
+    "finished",
+  );
 });
 
 test("adding a book finds and saves its cover and falls back when the image fails", async () => {
@@ -1037,16 +1069,24 @@ test("adding a book finds and saves its cover and falls back when the image fail
   globalThis.fetch = async (url, init) => {
     if (String(url).startsWith("https://openlibrary.org/search.json")) {
       searches++;
-      return Response.json({ docs: [{ title: "Cover test", author_name: ["Writer"], cover_i: 777 }] });
+      return Response.json({
+        docs: [{ title: "Cover test", author_name: ["Writer"], cover_i: 777 }],
+      });
     }
     return apiFetch(url, init);
   };
   render(createElement(BooksApp));
   await waitFor(() => assert.ok(!document.querySelector('[aria-busy="true"]')));
-  fireEvent.click(screen.getByRole("button", { name: "Add currently reading" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Add currently reading" }),
+  );
   const dialog = screen.getByRole("dialog");
-  fireEvent.change(within(dialog).getByLabelText("Title"), { target: { value: "Cover test" } });
-  fireEvent.change(within(dialog).getByLabelText("Author"), { target: { value: "Writer" } });
+  fireEvent.change(within(dialog).getByLabelText("Title"), {
+    target: { value: "Cover test" },
+  });
+  fireEvent.change(within(dialog).getByLabelText("Author"), {
+    target: { value: "Writer" },
+  });
   fireEvent.click(within(dialog).getByRole("button", { name: "Add book" }));
   await waitFor(() => assert.ok(!screen.queryByRole("dialog")));
   const cover = screen.getByRole("img", { name: "Cover of Cover test" });
@@ -1061,33 +1101,65 @@ test("adding a book finds and saves its cover and falls back when the image fail
 test("currently reading delete supports cancel, keeps failed saves, and persists deletion", async () => {
   globalThis.fetch = apiFetch;
   let library = getBooksStore().getLibrary();
-  getBooksStore().startReading({ title: "Delete test", author: "Writer" }, library.revision);
+  getBooksStore().startReading(
+    { title: "Delete test", author: "Writer" },
+    library.revision,
+  );
   render(createElement(BooksApp));
-  const button = await screen.findByRole("button", { name: "Delete Delete test from currently reading" });
+  const button = await screen.findByRole("button", {
+    name: "Delete Delete test from currently reading",
+  });
   window.confirm = () => false;
   fireEvent.click(button);
   assert.equal(getBooksStore().getLibrary().books.length, 1);
   window.confirm = () => true;
-  globalThis.fetch = async (url, init) => init?.method === "PATCH" ? Response.json({ error: "Database unavailable" }, { status: 500 }) : apiFetch(url, init);
+  globalThis.fetch = async (url, init) =>
+    init?.method === "PATCH"
+      ? Response.json({ error: "Database unavailable" }, { status: 500 })
+      : apiFetch(url, init);
   fireEvent.click(button);
   await screen.findByRole("alert");
-  assert.ok(screen.getByRole("button", { name: "Delete Delete test from currently reading" }));
+  assert.ok(
+    screen.getByRole("button", {
+      name: "Delete Delete test from currently reading",
+    }),
+  );
   assert.equal(getBooksStore().getLibrary().books.length, 1);
   globalThis.fetch = apiFetch;
   fireEvent.click(button);
-  await waitFor(() => assert.ok(!screen.queryByRole("button", { name: "Delete Delete test from currently reading" })));
+  await waitFor(() =>
+    assert.ok(
+      !screen.queryByRole("button", {
+        name: "Delete Delete test from currently reading",
+      }),
+    ),
+  );
   assert.equal(getBooksStore().getLibrary().books.length, 0);
   cleanup();
   render(createElement(BooksApp));
   await waitFor(() => assert.ok(!document.querySelector('[aria-busy="true"]')));
-  assert.ok(!screen.queryByRole("button", { name: "Delete Delete test from currently reading" }));
+  assert.ok(
+    !screen.queryByRole("button", {
+      name: "Delete Delete test from currently reading",
+    }),
+  );
 });
 
 test("retry cover reloads a failed image even when the cover ID stays the same", async () => {
   let library = getBooksStore().getLibrary();
-  getBooksStore().startReading({ title: "Retry test", author: "Writer" }, library.revision, 123);
-  globalThis.fetch = async (url, init) => String(url).startsWith("https://openlibrary.org/search.json")
-    ? Response.json({ docs: [{ title: "Retry test", author_name: ["Writer"], cover_i: 123 }] }) : apiFetch(url, init);
+  getBooksStore().startReading(
+    { title: "Retry test", author: "Writer" },
+    library.revision,
+    123,
+  );
+  globalThis.fetch = async (url, init) =>
+    String(url).startsWith("https://openlibrary.org/search.json")
+      ? Response.json({
+          docs: [
+            { title: "Retry test", author_name: ["Writer"], cover_i: 123 },
+          ],
+        })
+      : apiFetch(url, init);
   render(createElement(BooksApp));
   const image = await screen.findByRole("img", { name: "Cover of Retry test" });
   fireEvent.error(image);
@@ -1095,17 +1167,31 @@ test("retry cover reloads a failed image even when the cover ID stays the same",
   assert.ok(!screen.queryByRole("button", { name: "Retry cover" }));
   fireEvent.click(screen.getByRole("button", { name: "Retry test" }));
   fireEvent.click(screen.getByRole("button", { name: "Retry cover" }));
-  const refreshed = await screen.findByRole("img", { name: "Cover of Retry test" });
+  const refreshed = await screen.findByRole("img", {
+    name: "Cover of Retry test",
+  });
   assert.match(refreshed.src, /refresh=\d+/);
-  assert.match((await screen.findByRole("status")).textContent, /Cover refreshed/);
-  globalThis.fetch = async (url, init) => String(url).startsWith("https://openlibrary.org/search.json")
-    ? Response.json({ docs: [] }) : apiFetch(url, init);
+  assert.match(
+    (await screen.findByRole("status")).textContent,
+    /Cover refreshed/,
+  );
+  globalThis.fetch = async (url, init) =>
+    String(url).startsWith("https://openlibrary.org/search.json")
+      ? Response.json({ docs: [] })
+      : apiFetch(url, init);
   fireEvent.click(screen.getByRole("button", { name: "Retry cover" }));
-  await waitFor(() => assert.match(screen.getByRole("status").textContent, /Couldn’t find/));
+  await waitFor(() =>
+    assert.match(screen.getByRole("status").textContent, /Couldn’t find/),
+  );
   assert.equal(getBooksStore().getLibrary().books[0].coverId, 123);
   const dialog = screen.getByRole("dialog");
-  fireEvent.change(within(dialog).getByLabelText("Title"), { target: { value: "Updated title" } });
-  assert.equal(within(dialog).getByRole("button", { name: "Retry cover" }).disabled, true);
+  fireEvent.change(within(dialog).getByLabelText("Title"), {
+    target: { value: "Updated title" },
+  });
+  assert.equal(
+    within(dialog).getByRole("button", { name: "Retry cover" }).disabled,
+    true,
+  );
   fireEvent.click(within(dialog).getByRole("button", { name: "Save changes" }));
   await waitFor(() => assert.ok(!screen.queryByRole("dialog")));
   assert.equal(getBooksStore().getLibrary().books[0].title, "Updated title");
@@ -1114,13 +1200,17 @@ test("retry cover reloads a failed image even when the cover ID stays the same",
 test("needs queues and sidebar counts exclude undated readings and readings through 2022", async () => {
   globalThis.fetch = apiFetch;
   const store = getBooksStore();
-  const preview = store.previewImport({ source: "goodreads", filename: "years.csv", csv: "Title,Author,Exclusive Shelf,Date Read\nOlder book,Writer,read,2021/06/01\nCutoff book,Writer,read,2022/12/31\nRecent book,Writer,read,2023/01/01\nUndated book,Writer,read," });
+  const preview = store.previewImport({
+    source: "goodreads",
+    filename: "years.csv",
+    csv: "Title,Author,Exclusive Shelf,Date Read\nOlder book,Writer,read,2021/06/01\nCutoff book,Writer,read,2022/12/31\nRecent book,Writer,read,2023/01/01\nUndated book,Writer,read,",
+  });
   store.confirmImport(preview.id);
   render(createElement(BooksApp));
   await screen.findByRole("heading", { name: "Cutoff book" });
   for (const name of [/Needs classification/, /Needs reading format/]) {
     const button = screen.getByRole("button", { name });
-    assert.equal(button.querySelector('.side-count').textContent, "1");
+    assert.equal(button.querySelector(".side-count").textContent, "1");
     fireEvent.click(button);
     assert.ok(!screen.queryByRole("heading", { name: "Cutoff book" }));
     assert.ok(!screen.queryByRole("heading", { name: "Older book" }));
@@ -1131,5 +1221,11 @@ test("needs queues and sidebar counts exclude undated readings and readings thro
   assert.ok(screen.getByRole("heading", { name: "Older book" }));
   assert.ok(screen.getByRole("heading", { name: "Undated book" }));
   assert.ok(screen.getByRole("heading", { name: "Cutoff book" }));
-  assert.ok(store.getLibrary().books.every(book => book.kind === "Unclear" && book.format === "Unclear"));
+  assert.ok(
+    store
+      .getLibrary()
+      .books.every(
+        (book) => book.kind === "Unclear" && book.format === "Unclear",
+      ),
+  );
 });

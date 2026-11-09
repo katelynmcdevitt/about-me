@@ -45,8 +45,14 @@ test("yearly totals include rereads, exclude undated and other-year entries, and
   assert.equal(stats.finished, 3);
   assert.equal(stats.pages, 200);
   assert.equal(stats.missingPages, 1);
-  assert.deepEqual(stats.months.map(month => month.pages), [100, 100, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-  assert.equal(stats.months.reduce((sum, month) => sum + month.pages, 0), stats.pages);
+  assert.deepEqual(
+    stats.months.map((month) => month.pages),
+    [100, 100, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  );
+  assert.equal(
+    stats.months.reduce((sum, month) => sum + month.pages, 0),
+    stats.pages,
+  );
   assert.equal(stats.averageRating, 4.5);
   assert.equal(stats.rated, 2);
   assert.equal(stats.undated, 1);
@@ -70,7 +76,9 @@ test("empty years and unrated books have no fabricated averages or percentages",
   assert.equal(empty.finished, 0);
   assert.equal(empty.averageRating, null);
   assert.ok(empty.formats.every((format) => format.percentage === 0));
-  assert.ok(empty.months.every((month) => month.count === 0 && month.pages === 0));
+  assert.ok(
+    empty.months.every((month) => month.count === 0 && month.pages === 0),
+  );
   const unrated = yearlyReadingSummary(
     [
       reading({
@@ -90,7 +98,17 @@ test("empty years and unrated books have no fabricated averages or percentages",
 });
 
 test("currently reading is excluded from finished totals and missing-data counts", () => {
-  const summary = yearlyReadingSummary([reading({ readingStatus: "reading", dateRead: "", rating: 0, format: "Unclear" })], "2026");
+  const summary = yearlyReadingSummary(
+    [
+      reading({
+        readingStatus: "reading",
+        dateRead: "",
+        rating: 0,
+        format: "Unclear",
+      }),
+    ],
+    "2026",
+  );
   assert.equal(summary.finished, 0);
   assert.equal(summary.undated, 0);
   assert.equal(summary.unknownFormats, 0);

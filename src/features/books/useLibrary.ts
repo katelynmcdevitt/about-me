@@ -119,19 +119,42 @@ export function useLibrary() {
     if (result) setLibrary(result);
     return !!result;
   }
-  async function refreshCover(id: string, revision = libraryRef.current.revision) {
-    const result = await perform<{ library: Library; found: boolean }>("/api/books/library", { action: "refreshCover", id, revision }, "PATCH");
+  async function refreshCover(
+    id: string,
+    revision = libraryRef.current.revision,
+  ) {
+    const result = await perform<{ library: Library; found: boolean }>(
+      "/api/books/library",
+      { action: "refreshCover", id, revision },
+      "PATCH",
+    );
     if (!result) return null;
     setLibrary(result.library);
     return result;
   }
   async function deleteCurrentReading(id: string) {
-    const result = await perform<Library>("/api/books/library", { action: "deleteCurrentReading", id, revision: libraryRef.current.revision }, "PATCH");
+    const result = await perform<Library>(
+      "/api/books/library",
+      {
+        action: "deleteCurrentReading",
+        id,
+        revision: libraryRef.current.revision,
+      },
+      "PATCH",
+    );
     if (result) setLibrary(result);
     return !!result;
   }
   async function startReading(changes: EntryChanges) {
-    const result = await perform<Library>("/api/books/library", { action: "startReading", changes, revision: libraryRef.current.revision }, "PATCH");
+    const result = await perform<Library>(
+      "/api/books/library",
+      {
+        action: "startReading",
+        changes,
+        revision: libraryRef.current.revision,
+      },
+      "PATCH",
+    );
     if (result) setLibrary(result);
     return !!result;
   }

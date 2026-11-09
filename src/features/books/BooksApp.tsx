@@ -40,13 +40,21 @@ import BookDetailsDialog from "./BookDetailsDialog";
 import YearlyDashboard from "./YearlyDashboard";
 import { isInClassificationScope, needsReadingFormat } from "./readingStats";
 
-function BookCover({ book, index, refresh = 0 }: { book: Book; index: number; refresh?: number }) {
+function BookCover({
+  book,
+  index,
+  refresh = 0,
+}: {
+  book: Book;
+  index: number;
+  refresh?: number;
+}) {
   const [failed, setFailed] = useState(false);
   const coverUrl = book.coverId
     ? `https://covers.openlibrary.org/b/id/${book.coverId}-M.jpg?default=false`
     : book.isbn
-    ? `https://covers.openlibrary.org/b/isbn/${book.isbn}-M.jpg?default=false`
-    : "";
+      ? `https://covers.openlibrary.org/b/isbn/${book.isbn}-M.jpg?default=false`
+      : "";
 
   return (
     <div
@@ -70,9 +78,13 @@ function BookCover({ book, index, refresh = 0 }: { book: Book; index: number; re
 function BooksApp() {
   const db = useLibrary();
   const { books, categories: customCategories, imports } = db.library;
-  const finishedBooks = books.filter(book => book.readingStatus !== "reading");
-  const currentBooks = books.filter(book => book.readingStatus === "reading");
-  const [coverRefreshes, setCoverRefreshes] = useState<Record<string, number>>({});
+  const finishedBooks = books.filter(
+    (book) => book.readingStatus !== "reading",
+  );
+  const currentBooks = books.filter((book) => book.readingStatus === "reading");
+  const [coverRefreshes, setCoverRefreshes] = useState<Record<string, number>>(
+    {},
+  );
   const [addingReading, setAddingReading] = useState(false);
   const [importSource, setImportSource] = useState<"goodreads" | "sheets">(
     "goodreads",
@@ -100,7 +112,8 @@ function BooksApp() {
   const needsFormat = libraryView === "formats";
   const isQueue = needsClassification || needsFormat;
   const classificationBooks = books.filter(isInClassificationScope);
-  const missingFormatCount = classificationBooks.filter(needsReadingFormat).length;
+  const missingFormatCount =
+    classificationBooks.filter(needsReadingFormat).length;
   const unclassifiedCount = classificationBooks.filter(
     (book) => !book.kind || book.kind === "Unclear",
   ).length;
@@ -136,7 +149,11 @@ function BooksApp() {
   const filteredBooks = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     return books
-      .filter(book => isQueue ? isInClassificationScope(book) : book.readingStatus !== "reading")
+      .filter((book) =>
+        isQueue
+          ? isInClassificationScope(book)
+          : book.readingStatus !== "reading",
+      )
       .filter(
         (book) => !needsClassification || !book.kind || book.kind === "Unclear",
       )
@@ -162,7 +179,15 @@ function BooksApp() {
           a.title.localeCompare(b.title)
         );
       });
-  }, [activeCategory, books, query, sortBy, needsClassification, needsFormat, isQueue]);
+  }, [
+    activeCategory,
+    books,
+    query,
+    sortBy,
+    needsClassification,
+    needsFormat,
+    isQueue,
+  ]);
 
   const ratedBooks = finishedBooks.filter((book) => book.rating > 0);
   const averageRating = ratedBooks.length
@@ -524,25 +549,98 @@ function BooksApp() {
           )}
 
           {libraryView === "all" && (
-            <section className="currently-reading" aria-labelledby="currently-reading-title">
+            <section
+              className="currently-reading"
+              aria-labelledby="currently-reading-title"
+            >
               <div className="collection-heading">
-                <h2 id="currently-reading-title">Currently reading <span className="heading-count">{currentBooks.length}</span></h2>
-                <button className="import-button" onClick={() => { db.setError(""); setAddingReading(true); }}><Plus size={16} /> Add currently reading</button>
+                <h2 id="currently-reading-title">
+                  Currently reading{" "}
+                  <span className="heading-count">{currentBooks.length}</span>
+                </h2>
+                <button
+                  className="import-button"
+                  onClick={() => {
+                    db.setError("");
+                    setAddingReading(true);
+                  }}
+                >
+                  <Plus size={16} /> Add currently reading
+                </button>
               </div>
-              {currentBooks.length === 0 ? <p>Add a book you’ve started to keep it here while you read.</p> : (
-                <ul className="current-reading-list">{currentBooks.filter(book =>
-                  (activeCategory === "All books" || book.category === activeCategory) &&
-                  `${book.title} ${book.author} ${book.category} ${book.tags.join(" ")}`.toLowerCase().includes(query.trim().toLowerCase())
-                ).map(book => <li key={book.id}>
-                  <BookCover key={`${book.coverId ?? ""}-${book.isbn}-${coverRefreshes[book.id] ?? 0}`} book={book} index={0} refresh={coverRefreshes[book.id]} />
-                  <div className="current-reading-info"><button className="text-button" onClick={() => { db.setError(""); setSelectedBook({ book: structuredClone(book), revision: db.library.revision }); }}>{book.title}</button><p>{book.author}</p><span>{book.format === "Unclear" ? "Format not set" : book.format}</span></div>
-                  <div className="current-reading-actions">
-                    <button className="text-button" onClick={() => { db.setError(""); setSelectedBook({ book: structuredClone(book), revision: db.library.revision, finishing: true }); }}>Mark finished</button>
-                    <button className="text-button current-reading-delete" aria-label={`Delete ${book.title} from currently reading`} onClick={() => {
-                      if (window.confirm(`Delete “${book.title}” from Currently reading? Any earlier finished readings will be kept.`)) void db.deleteCurrentReading(book.id);
-                    }}>Delete</button>
-                  </div>
-                </li>)}</ul>
+              {currentBooks.length === 0 ? (
+                <p>Add a book you’ve started to keep it here while you read.</p>
+              ) : (
+                <ul className="current-reading-list">
+                  {currentBooks
+                    .filter(
+                      (book) =>
+                        (activeCategory === "All books" ||
+                          book.category === activeCategory) &&
+                        `${book.title} ${book.author} ${book.category} ${book.tags.join(" ")}`
+                          .toLowerCase()
+                          .includes(query.trim().toLowerCase()),
+                    )
+                    .map((book) => (
+                      <li key={book.id}>
+                        <BookCover
+                          key={`${book.coverId ?? ""}-${book.isbn}-${coverRefreshes[book.id] ?? 0}`}
+                          book={book}
+                          index={0}
+                          refresh={coverRefreshes[book.id]}
+                        />
+                        <div className="current-reading-info">
+                          <button
+                            className="text-button"
+                            onClick={() => {
+                              db.setError("");
+                              setSelectedBook({
+                                book: structuredClone(book),
+                                revision: db.library.revision,
+                              });
+                            }}
+                          >
+                            {book.title}
+                          </button>
+                          <p>{book.author}</p>
+                          <span>
+                            {book.format === "Unclear"
+                              ? "Format not set"
+                              : book.format}
+                          </span>
+                        </div>
+                        <div className="current-reading-actions">
+                          <button
+                            className="text-button"
+                            onClick={() => {
+                              db.setError("");
+                              setSelectedBook({
+                                book: structuredClone(book),
+                                revision: db.library.revision,
+                                finishing: true,
+                              });
+                            }}
+                          >
+                            Mark finished
+                          </button>
+                          <button
+                            className="text-button current-reading-delete"
+                            aria-label={`Delete ${book.title} from currently reading`}
+                            onClick={() => {
+                              if (
+                                window.confirm(
+                                  `Delete “${book.title}” from Currently reading? Any earlier finished readings will be kept.`,
+                                )
+                              )
+                                void db.deleteCurrentReading(book.id);
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                </ul>
               )}
             </section>
           )}
@@ -568,7 +666,9 @@ function BooksApp() {
                     aria-label="Library statistics"
                   >
                     <div className="stat-item">
-                      <span className="stat-number">{finishedBooks.length}</span>
+                      <span className="stat-number">
+                        {finishedBooks.length}
+                      </span>
                       <span className="stat-label">books read</span>
                     </div>
                     <span className="stat-divider" />
@@ -833,20 +933,27 @@ function BooksApp() {
                 {needsClassification && (
                   <p className="classification-help">
                     Choose Fiction or Nonfiction for each book. Books leave this
-                    list once your choice is saved. Undated books and books finished in 2022 or earlier are excluded.
+                    list once your choice is saved. Undated books and books
+                    finished in 2022 or earlier are excluded.
                   </p>
                 )}
                 {needsFormat && (
                   <p className="classification-help">
                     Choose Audio, Physical, or Kindle for each book. Books leave
-                    this list once the format is saved. Undated books and books finished in 2022 or earlier are excluded.
+                    this list once the format is saved. Undated books and books
+                    finished in 2022 or earlier are excluded.
                   </p>
                 )}
                 {filteredBooks.length ? (
                   <div className="book-list">
                     {filteredBooks.map((book, index) => (
                       <article className="book-row" key={book.id}>
-                        <BookCover key={`${book.coverId ?? ""}-${book.isbn}-${coverRefreshes[book.id] ?? 0}`} book={book} index={index} refresh={coverRefreshes[book.id]} />
+                        <BookCover
+                          key={`${book.coverId ?? ""}-${book.isbn}-${coverRefreshes[book.id] ?? 0}`}
+                          book={book}
+                          index={index}
+                          refresh={coverRefreshes[book.id]}
+                        />
                         <div className="book-info">
                           <h3>
                             <button
@@ -1112,7 +1219,11 @@ function BooksApp() {
 
                 <footer className="list-footer">
                   <span>
-                    {filteredBooks.length} of {isQueue ? classificationBooks.length : finishedBooks.length} {isQueue ? "books" : "finished books"}
+                    {filteredBooks.length} of{" "}
+                    {isQueue
+                      ? classificationBooks.length
+                      : finishedBooks.length}{" "}
+                    {isQueue ? "books" : "finished books"}
                   </span>
                   <div className="backup-actions">
                     <button onClick={exportBackup}>
@@ -1153,7 +1264,17 @@ function BooksApp() {
           )}
         </main>
       </fieldset>
-      {addingReading && <AddReadingDialog busy={db.busy} error={db.error} onClose={() => { setAddingReading(false); db.setError(""); }} onSave={db.startReading} />}
+      {addingReading && (
+        <AddReadingDialog
+          busy={db.busy}
+          error={db.error}
+          onClose={() => {
+            setAddingReading(false);
+            db.setError("");
+          }}
+          onSave={db.startReading}
+        />
+      )}
       {selectedBook && (
         <BookDetailsDialog
           book={selectedBook.book}
@@ -1169,14 +1290,27 @@ function BooksApp() {
             db.saveEntry(selectedBook.book.id, changes, selectedBook.revision)
           }
           onRetryCover={async () => {
-            const result = await db.refreshCover(selectedBook.book.id, selectedBook.revision);
+            const result = await db.refreshCover(
+              selectedBook.book.id,
+              selectedBook.revision,
+            );
             if (!result) return null;
-            setCoverRefreshes(current => ({ ...current, [selectedBook.book.id]: Date.now() }));
-            setSelectedBook(current => current && current.book.id === selectedBook.book.id ? {
+            setCoverRefreshes((current) => ({
               ...current,
-              book: result.library.books.find(book => book.id === current.book.id) ?? current.book,
-              revision: result.library.revision,
-            } : current);
+              [selectedBook.book.id]: Date.now(),
+            }));
+            setSelectedBook((current) =>
+              current && current.book.id === selectedBook.book.id
+                ? {
+                    ...current,
+                    book:
+                      result.library.books.find(
+                        (book) => book.id === current.book.id,
+                      ) ?? current.book,
+                    revision: result.library.revision,
+                  }
+                : current,
+            );
             return result.found;
           }}
           onAddReading={(changes) =>

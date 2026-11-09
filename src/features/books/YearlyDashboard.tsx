@@ -16,7 +16,7 @@ export default function YearlyDashboard({
   onViewFormats: () => void;
 }) {
   const stats = yearlyReadingSummary(books, year);
-  const maximumPages = Math.max(1, ...stats.months.map(month => month.pages));
+  const maximumPages = Math.max(1, ...stats.months.map((month) => month.pages));
   const maximum = Math.max(1, ...stats.months.map((month) => month.count));
   return (
     <section
@@ -125,15 +125,30 @@ export default function YearlyDashboard({
           </ol>
         </div>
       </section>
-      <section className="dashboard-panel" aria-labelledby="monthly-pages-title">
+      <section
+        className="dashboard-panel"
+        aria-labelledby="monthly-pages-title"
+      >
         <h3 id="monthly-pages-title">Pages read by month</h3>
-        <div className="monthly-chart-scroll" tabIndex={0} role="group" aria-label="Monthly pages chart; scroll to see all months">
+        <div
+          className="monthly-chart-scroll"
+          tabIndex={0}
+          role="group"
+          aria-label="Monthly pages chart; scroll to see all months"
+        >
           <ol className="monthly-chart monthly-pages-chart">
-            {stats.months.map(month => (
-              <li key={month.label} aria-label={`${month.label}: ${month.pages.toLocaleString()} pages`}>
-                <span className="month-count">{month.pages.toLocaleString()}</span>
+            {stats.months.map((month) => (
+              <li
+                key={month.label}
+                aria-label={`${month.label}: ${month.pages.toLocaleString()} pages`}
+              >
+                <span className="month-count">
+                  {month.pages.toLocaleString()}
+                </span>
                 <div className="month-track" aria-hidden="true">
-                  <span style={{ height: `${(month.pages / maximumPages) * 100}%` }} />
+                  <span
+                    style={{ height: `${(month.pages / maximumPages) * 100}%` }}
+                  />
                 </div>
                 <span className="month-name">{month.label}</span>
               </li>
@@ -141,8 +156,10 @@ export default function YearlyDashboard({
           </ol>
         </div>
         <p className="dashboard-footnote">
-          Each book’s pages count toward the month you finished it, including rereads and audiobooks.
-          {stats.missingPages > 0 && ` ${stats.missingPages} ${stats.missingPages === 1 ? "reading is" : "readings are"} missing page counts and excluded from this chart.`}
+          Each book’s pages count toward the month you finished it, including
+          rereads and audiobooks.
+          {stats.missingPages > 0 &&
+            ` ${stats.missingPages} ${stats.missingPages === 1 ? "reading is" : "readings are"} missing page counts and excluded from this chart.`}
         </p>
       </section>
       <section

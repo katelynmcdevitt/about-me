@@ -146,18 +146,23 @@ export class BooksStore {
         if (changed) this.incrementRevision();
         this.db.exec("PRAGMA user_version=3");
       });
-    if (version < 4) this.transaction(() => {
-      this.db.exec(`ALTER TABLE reading_entries ADD COLUMN reading_status TEXT NOT NULL DEFAULT 'finished' CHECK(reading_status IN ('reading','finished'));
+    if (version < 4)
+      this.transaction(() => {
+        this.db
+          .exec(`ALTER TABLE reading_entries ADD COLUMN reading_status TEXT NOT NULL DEFAULT 'finished' CHECK(reading_status IN ('reading','finished'));
         DROP INDEX reading_dates;
         CREATE UNIQUE INDEX reading_dates ON reading_entries(book_id,date_read) WHERE reading_status='finished';
         CREATE UNIQUE INDEX current_reading ON reading_entries(book_id) WHERE reading_status='reading';
         PRAGMA user_version=4;`);
-      this.incrementRevision();
-    });
-    if (version < 5) this.transaction(() => {
-      this.db.exec("ALTER TABLE books ADD COLUMN cover_id INTEGER; PRAGMA user_version=5;");
-      this.incrementRevision();
-    });
+        this.incrementRevision();
+      });
+    if (version < 5)
+      this.transaction(() => {
+        this.db.exec(
+          "ALTER TABLE books ADD COLUMN cover_id INTEGER; PRAGMA user_version=5;",
+        );
+        this.incrementRevision();
+      });
   }
   close() {
     this.db.close();
@@ -290,29 +295,90 @@ export class BooksStore {
         .run(entry.id, id);
     }
   }
-  startReading(changes: EntryChanges, revision: number, coverId: number | null = null): Library {
+  startReading(
+    changes: EntryChanges,
+    revision: number,
+    coverId: number | null = null,
+  ): Library {
     return this.transaction(() => {
       this.checkRevision(revision);
-      if (!changes || typeof changes !== "object" ||
-          typeof changes.title !== "string" || !changes.title.trim() || changes.title.length > 2000 ||
-          typeof changes.author !== "string" || !changes.author.trim() || changes.author.length > 1000)
+      if (
+        !changes ||
+        typeof changes !== "object" ||
+        typeof changes.title !== "string" ||
+        !changes.title.trim() ||
+        changes.title.length > 2000 ||
+        typeof changes.author !== "string" ||
+        !changes.author.trim() ||
+        changes.author.length > 1000
+      )
         throw new LibraryError("Enter a title and author.");
-      if (changes.format !== undefined && !["Unclear", "Audio", "Physical", "Kindle"].includes(changes.format))
+      if (
+        changes.format !== undefined &&
+        !["Unclear", "Audio", "Physical", "Kindle"].includes(changes.format)
+      )
         throw new LibraryError("Invalid reading format.");
-      const matches = this.catalog().filter(book => identity(book.title, book.author) === identity(changes.title!, changes.author!));
-      if (matches.length > 1) throw new LibraryError("Multiple books match this title and author. Use a distinct title.");
+      const matches = this.catalog().filter(
+        (book) =>
+          identity(book.title, book.author) ===
+          identity(changes.title!, changes.author!),
+      );
+      if (matches.length > 1)
+        throw new LibraryError(
+          "Multiple books match this title and author. Use a distinct title.",
+        );
       let book = matches[0];
-      if (book && this.readings().some(entry => entry.catalogId === book.id && entry.readingStatus === "reading"))
+      if (
+        book &&
+        this.readings().some(
+          (entry) =>
+            entry.catalogId === book.id && entry.readingStatus === "reading",
+        )
+      )
         throw new LibraryError("This book is already in Currently reading.");
       if (!book) {
-        book = { id: randomUUID(), title: changes.title.trim(), author: changes.author.trim(), isbn: "", goodreadsId: "", year: null, pages: null };
-        this.db.prepare("INSERT INTO books(id,title,author,isbn,goodreads_id,year,pages) VALUES(?,?,?,?,?,?,?)").run(book.id,book.title,book.author,book.isbn,book.goodreadsId,book.year,book.pages);
+        book = {
+          id: randomUUID(),
+          title: changes.title.trim(),
+          author: changes.author.trim(),
+          isbn: "",
+          goodreadsId: "",
+          year: null,
+          pages: null,
+        };
+        this.db
+          .prepare(
+            "INSERT INTO books(id,title,author,isbn,goodreads_id,year,pages) VALUES(?,?,?,?,?,?,?)",
+          )
+          .run(
+            book.id,
+            book.title,
+            book.author,
+            book.isbn,
+            book.goodreadsId,
+            book.year,
+            book.pages,
+          );
       }
       if (!book.coverId && Number.isSafeInteger(coverId) && coverId! > 0) {
-        this.db.prepare("UPDATE books SET cover_id=? WHERE id=?").run(coverId, book.id);
+        this.db
+          .prepare("UPDATE books SET cover_id=? WHERE id=?")
+          .run(coverId, book.id);
         book.coverId = coverId;
       }
-      this.writeReading({ ...book, id: randomUUID(), catalogId: book.id, readingStatus: "reading", dateRead: "", rating: 0, category: uncategorized, shelves: [], tags: [], format: changes.format ?? "Unclear", kind: "Unclear" });
+      this.writeReading({
+        ...book,
+        id: randomUUID(),
+        catalogId: book.id,
+        readingStatus: "reading",
+        dateRead: "",
+        rating: 0,
+        category: uncategorized,
+        shelves: [],
+        tags: [],
+        format: changes.format ?? "Unclear",
+        kind: "Unclear",
+      });
       this.incrementRevision();
       return this.getLibrary();
     });
@@ -320,11 +386,15 @@ export class BooksStore {
   refreshCover(id: string, coverId: number | null, revision: number): Library {
     return this.transaction(() => {
       this.checkRevision(revision);
-      const entry = this.readings().find(book => book.id === id);
-      if (!entry) throw new LibraryError("This reading entry no longer exists.", 404);
+      const entry = this.readings().find((book) => book.id === id);
+      if (!entry)
+        throw new LibraryError("This reading entry no longer exists.", 404);
       if (coverId !== null) {
-        if (!Number.isSafeInteger(coverId) || coverId <= 0) throw new LibraryError("Invalid cover.");
-        this.db.prepare("UPDATE books SET cover_id=? WHERE id=?").run(coverId, entry.catalogId);
+        if (!Number.isSafeInteger(coverId) || coverId <= 0)
+          throw new LibraryError("Invalid cover.");
+        this.db
+          .prepare("UPDATE books SET cover_id=? WHERE id=?")
+          .run(coverId, entry.catalogId);
         this.incrementRevision();
       }
       return this.getLibrary();
@@ -333,12 +403,19 @@ export class BooksStore {
   deleteCurrentReading(id: string, revision: number): Library {
     return this.transaction(() => {
       this.checkRevision(revision);
-      const entry = this.readings().find(book => book.id === id);
-      if (!entry) throw new LibraryError("This reading entry no longer exists.", 404);
+      const entry = this.readings().find((book) => book.id === id);
+      if (!entry)
+        throw new LibraryError("This reading entry no longer exists.", 404);
       if (entry.readingStatus !== "reading")
-        throw new LibraryError("Only currently reading books can be deleted here.");
+        throw new LibraryError(
+          "Only currently reading books can be deleted here.",
+        );
       this.db.prepare("DELETE FROM reading_entries WHERE id=?").run(id);
-      this.db.prepare("DELETE FROM books WHERE id=? AND NOT EXISTS (SELECT 1 FROM reading_entries WHERE book_id=?)").run(entry.catalogId, entry.catalogId);
+      this.db
+        .prepare(
+          "DELETE FROM books WHERE id=? AND NOT EXISTS (SELECT 1 FROM reading_entries WHERE book_id=?)",
+        )
+        .run(entry.catalogId, entry.catalogId);
       this.incrementRevision();
       return this.getLibrary();
     });
@@ -484,26 +561,49 @@ export class BooksStore {
         throw new LibraryError(
           "Use a valid finish date in YYYY-MM-DD or YYYY-MM format.",
         );
-      if (changes.readingStatus !== undefined && !["reading", "finished"].includes(changes.readingStatus))
+      if (
+        changes.readingStatus !== undefined &&
+        !["reading", "finished"].includes(changes.readingStatus)
+      )
         throw new LibraryError("Invalid reading status.");
-      if (changes.readingStatus === "reading" && entry.readingStatus !== "reading")
+      if (
+        changes.readingStatus === "reading" &&
+        entry.readingStatus !== "reading"
+      )
         throw new LibraryError("Use Add currently reading to start a book.");
       const edited: Reading = {
         ...entry,
-        ...(create ? { id: randomUUID(), dateRead: "", rating: 0, readingStatus: "finished" as const } : {}),
+        ...(create
+          ? {
+              id: randomUUID(),
+              dateRead: "",
+              rating: 0,
+              readingStatus: "finished" as const,
+            }
+          : {}),
         ...changes,
         isbn,
       };
       edited.title = edited.title.trim();
       edited.author = edited.author.trim();
       edited.dateRead = normalizedDate(edited.dateRead)!;
-      if (entry.readingStatus === "reading" && edited.readingStatus === "finished" && !edited.dateRead)
+      if (
+        entry.readingStatus === "reading" &&
+        edited.readingStatus === "finished" &&
+        !edited.dateRead
+      )
         throw new LibraryError("Add a finish date for this book.");
-      if (edited.readingStatus === "reading" && (edited.dateRead || edited.rating))
-        throw new LibraryError("Mark this book finished before adding a finish date or rating.");
+      if (
+        edited.readingStatus === "reading" &&
+        (edited.dateRead || edited.rating)
+      )
+        throw new LibraryError(
+          "Mark this book finished before adding a finish date or rating.",
+        );
       if (create && !edited.dateRead)
         throw new LibraryError("Add a finish date for the reread.");
-      if (edited.readingStatus !== "reading" &&
+      if (
+        edited.readingStatus !== "reading" &&
         this.db
           .prepare(
             "SELECT id FROM reading_entries WHERE reading_status='finished' AND book_id=? AND date_read=? AND id<>?",
@@ -681,13 +781,24 @@ export class BooksStore {
         catalog.push(book);
         catalogWrites.set(book.id, book);
       }
-      const reads = entries.filter((e) => e.catalogId === book.id && (e.readingStatus ?? "finished") === (incoming.readingStatus ?? "finished"));
+      const reads = entries.filter(
+        (e) =>
+          e.catalogId === book.id &&
+          (e.readingStatus ?? "finished") ===
+            (incoming.readingStatus ?? "finished"),
+      );
       let previous =
         selected && !incoming.dateRead
           ? selected
           : reads.find((e) => e.dateRead === incoming.dateRead);
-      if (!previous && incoming.dateRead && incoming.readingStatus !== "reading")
-        previous = entries.find(e => e.catalogId === book.id && e.readingStatus === "reading");
+      if (
+        !previous &&
+        incoming.dateRead &&
+        incoming.readingStatus !== "reading"
+      )
+        previous = entries.find(
+          (e) => e.catalogId === book.id && e.readingStatus === "reading",
+        );
       if (
         !previous &&
         (!incoming.dateRead || (reads.length === 1 && !reads[0].dateRead))

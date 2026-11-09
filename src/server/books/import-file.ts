@@ -198,7 +198,11 @@ export function parseImport(input: ImportInput): ParsedImport {
       return false;
     }
     const date = normalizedDate(record.book.dateRead);
-    if (date === null || (record.book.readingStatus === "reading" && (date !== "" || record.book.rating !== 0))) {
+    if (
+      date === null ||
+      (record.book.readingStatus === "reading" &&
+        (date !== "" || record.book.rating !== 0))
+    ) {
       rows.push({
         row: record.row,
         title: record.book.title,

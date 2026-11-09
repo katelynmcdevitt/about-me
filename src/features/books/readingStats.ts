@@ -16,7 +16,7 @@ function finishMonth(book: Book) {
   return { year: match[1], month: Number(match[2]) - 1 };
 }
 export function yearlyReadingSummary(books: Book[], year: string) {
-  books = books.filter(book => book.readingStatus !== "reading");
+  books = books.filter((book) => book.readingStatus !== "reading");
   const finished = books.filter((book) => finishMonth(book)?.year === year);
   const withPages = finished.filter(
     (book) =>
@@ -43,7 +43,9 @@ export function yearlyReadingSummary(books: Book[], year: string) {
       "Dec",
     ][index],
     count: finished.filter((book) => finishMonth(book)?.month === index).length,
-    pages: withPages.filter(book => finishMonth(book)?.month === index).reduce((total, book) => total + book.pages!, 0),
+    pages: withPages
+      .filter((book) => finishMonth(book)?.month === index)
+      .reduce((total, book) => total + book.pages!, 0),
   }));
   const mix = formatMix(finished);
   const counts = [mix.audio, mix.physical, mix.kindle, mix.unclear];
@@ -78,6 +80,8 @@ export function yearlyReadingSummary(books: Book[], year: string) {
       percentage: percentages[index],
     })),
     undated: books.filter((book) => !finishMonth(book)).length,
-    unknownFormats: books.filter(isInClassificationScope).filter(needsReadingFormat).length,
+    unknownFormats: books
+      .filter(isInClassificationScope)
+      .filter(needsReadingFormat).length,
   };
 }

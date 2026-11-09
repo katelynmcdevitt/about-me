@@ -558,7 +558,9 @@ test("format migration repairs known category and shelf labels once and preserve
   oldDb
     .prepare("UPDATE reading_entries SET format='Unclear' WHERE id IN (?,?)")
     .run(audioId, shelfId);
-  oldDb.exec("DROP INDEX current_reading; DROP INDEX reading_dates; ALTER TABLE reading_entries DROP COLUMN reading_status; ALTER TABLE books DROP COLUMN cover_id; CREATE UNIQUE INDEX reading_dates ON reading_entries(book_id,date_read); PRAGMA user_version=1");
+  oldDb.exec(
+    "DROP INDEX current_reading; DROP INDEX reading_dates; ALTER TABLE reading_entries DROP COLUMN reading_status; ALTER TABLE books DROP COLUMN cover_id; CREATE UNIQUE INDEX reading_dates ON reading_entries(book_id,date_read); PRAGMA user_version=1",
+  );
   oldDb.close();
   legacy = new BooksStore(file);
   library = legacy.getLibrary();
@@ -632,37 +634,98 @@ test("provider category mapping updates version-2 libraries once and allows late
 test("currently reading persists, reuses a finished book, and finishes with a required date", () => {
   let library = confirm();
   const finished = library.books[0];
-  library = store.startReading({ title: finished.title, author: finished.author, format: "Kindle" }, library.revision);
-  const current = library.books.find(book => book.readingStatus === "reading");
+  library = store.startReading(
+    { title: finished.title, author: finished.author, format: "Kindle" },
+    library.revision,
+  );
+  const current = library.books.find(
+    (book) => book.readingStatus === "reading",
+  );
   assert.equal(library.books.length, 2);
   assert.equal(current.isbn, finished.isbn);
   assert.equal(current.dateRead, "");
-  assert.throws(() => store.startReading({ title: finished.title, author: finished.author }, library.revision), /already in Currently reading/);
-  assert.throws(() => store.updateEntry(current.id, { readingStatus: "finished" }, library.revision), /finish date/);
-  assert.throws(() => store.updateEntry(current.id, { readingStatus: "finished", dateRead: finished.dateRead }, library.revision), /already has a reading/);
-  library = store.updateEntry(current.id, { readingStatus: "finished", dateRead: "2026-10-30", rating: 4 }, library.revision);
-  assert.equal(library.books.filter(book => book.readingStatus === "reading").length, 0);
-  assert.equal(library.books.find(book => book.id === current.id).rating, 4);
+  assert.throws(
+    () =>
+      store.startReading(
+        { title: finished.title, author: finished.author },
+        library.revision,
+      ),
+    /already in Currently reading/,
+  );
+  assert.throws(
+    () =>
+      store.updateEntry(
+        current.id,
+        { readingStatus: "finished" },
+        library.revision,
+      ),
+    /finish date/,
+  );
+  assert.throws(
+    () =>
+      store.updateEntry(
+        current.id,
+        { readingStatus: "finished", dateRead: finished.dateRead },
+        library.revision,
+      ),
+    /already has a reading/,
+  );
+  library = store.updateEntry(
+    current.id,
+    { readingStatus: "finished", dateRead: "2026-10-30", rating: 4 },
+    library.revision,
+  );
+  assert.equal(
+    library.books.filter((book) => book.readingStatus === "reading").length,
+    0,
+  );
+  assert.equal(library.books.find((book) => book.id === current.id).rating, 4);
 });
 
 test("currently reading survives database reopen and library backup restore", () => {
   const file = join(root, "current.sqlite");
   let durable = new BooksStore(file);
-  let library = durable.startReading({ title: "New book", author: "New writer", format: "Audio" }, durable.getLibrary().revision);
+  let library = durable.startReading(
+    { title: "New book", author: "New writer", format: "Audio" },
+    durable.getLibrary().revision,
+  );
   durable.close();
   durable = new BooksStore(file);
   assert.deepEqual(durable.getLibrary().books, library.books);
   durable.close();
-  const preview = store.previewImport({ source: "backup", filename: "library.json", backup: { version: 1, books: library.books, categories: [], isDemo: false, lastSyncedAt: "" } });
+  const preview = store.previewImport({
+    source: "backup",
+    filename: "library.json",
+    backup: {
+      version: 1,
+      books: library.books,
+      categories: [],
+      isDemo: false,
+      lastSyncedAt: "",
+    },
+  });
   library = store.confirmImport(preview.id);
   assert.equal(library.books[0].readingStatus, "reading");
   assert.equal(library.books[0].format, "Audio");
-  const again = store.previewImport({ source: "backup", filename: "library.json", backup: { version: 1, books: library.books, categories: [], isDemo: false, lastSyncedAt: "" } });
+  const again = store.previewImport({
+    source: "backup",
+    filename: "library.json",
+    backup: {
+      version: 1,
+      books: library.books,
+      categories: [],
+      isDemo: false,
+      lastSyncedAt: "",
+    },
+  });
   assert.equal(again.summary.unchanged, 1);
 });
 
 test("a finished import completes the current reading without duplicating it", () => {
-  let library = store.startReading({ title: "My book", author: "Writer", format: "Kindle" }, store.getLibrary().revision);
+  let library = store.startReading(
+    { title: "My book", author: "Writer", format: "Kindle" },
+    store.getLibrary().revision,
+  );
   const id = library.books[0].id;
   library = confirm();
   assert.equal(library.books.length, 1);
@@ -674,14 +737,32 @@ test("a finished import completes the current reading without duplicating it", (
 test("looked-up covers survive finishing, reopening, backup restore, and reimport", () => {
   const file = join(root, "cover.sqlite");
   let durable = new BooksStore(file);
-  let library = durable.startReading({ title: "Covered book", author: "Writer" }, durable.getLibrary().revision, 12345);
+  let library = durable.startReading(
+    { title: "Covered book", author: "Writer" },
+    durable.getLibrary().revision,
+    12345,
+  );
   const id = library.books[0].id;
-  library = durable.updateEntry(id, { readingStatus: "finished", dateRead: "2026-10-30" }, library.revision);
+  library = durable.updateEntry(
+    id,
+    { readingStatus: "finished", dateRead: "2026-10-30" },
+    library.revision,
+  );
   durable.close();
   durable = new BooksStore(file);
   assert.equal(durable.getLibrary().books[0].coverId, 12345);
   durable.close();
-  const backup = { source: "backup", filename: "library.json", backup: { version: 1, books: library.books, categories: [], isDemo: false, lastSyncedAt: "" } };
+  const backup = {
+    source: "backup",
+    filename: "library.json",
+    backup: {
+      version: 1,
+      books: library.books,
+      categories: [],
+      isDemo: false,
+      lastSyncedAt: "",
+    },
+  };
   library = confirm(backup);
   assert.equal(library.books[0].coverId, 12345);
   assert.equal(store.previewImport(backup).summary.unchanged, 1);
@@ -690,20 +771,44 @@ test("looked-up covers survive finishing, reopening, backup restore, and reimpor
 test("deleting a current reading preserves finished history and rejects stale or finished deletes", () => {
   let library = confirm();
   const finished = library.books[0];
-  library = store.startReading({ title: finished.title, author: finished.author }, library.revision);
-  const current = library.books.find(book => book.readingStatus === "reading");
-  assert.throws(() => store.deleteCurrentReading(current.id, library.revision - 1), /library changed/);
-  assert.throws(() => store.deleteCurrentReading(finished.id, library.revision), /Only currently reading/);
+  library = store.startReading(
+    { title: finished.title, author: finished.author },
+    library.revision,
+  );
+  const current = library.books.find(
+    (book) => book.readingStatus === "reading",
+  );
+  assert.throws(
+    () => store.deleteCurrentReading(current.id, library.revision - 1),
+    /library changed/,
+  );
+  assert.throws(
+    () => store.deleteCurrentReading(finished.id, library.revision),
+    /Only currently reading/,
+  );
   library = store.deleteCurrentReading(current.id, library.revision);
   assert.deepEqual(library.books, [finished]);
-  assert.throws(() => store.deleteCurrentReading(current.id, library.revision), /no longer exists/);
-  library = store.startReading({ title: "Temporary", author: "Writer" }, library.revision);
-  library = store.deleteCurrentReading(library.books.find(book => book.title === "Temporary").id, library.revision);
+  assert.throws(
+    () => store.deleteCurrentReading(current.id, library.revision),
+    /no longer exists/,
+  );
+  library = store.startReading(
+    { title: "Temporary", author: "Writer" },
+    library.revision,
+  );
+  library = store.deleteCurrentReading(
+    library.books.find((book) => book.title === "Temporary").id,
+    library.revision,
+  );
   assert.deepEqual(library.books, [finished]);
 });
 
 test("cover refresh replaces shared art, preserves it on no match, and rejects stale writes", () => {
-  let library = store.startReading({ title: "Refresh test", author: "Writer" }, store.getLibrary().revision, 12);
+  let library = store.startReading(
+    { title: "Refresh test", author: "Writer" },
+    store.getLibrary().revision,
+    12,
+  );
   const id = library.books[0].id;
   library = store.refreshCover(id, 99, library.revision);
   assert.equal(library.books[0].coverId, 99);
@@ -711,6 +816,9 @@ test("cover refresh replaces shared art, preserves it on no match, and rejects s
   library = store.refreshCover(id, null, revision);
   assert.equal(library.books[0].coverId, 99);
   assert.equal(library.revision, revision);
-  assert.throws(() => store.refreshCover(id, 123, revision - 1), /library changed/);
+  assert.throws(
+    () => store.refreshCover(id, 123, revision - 1),
+    /library changed/,
+  );
   assert.equal(store.getLibrary().books[0].coverId, 99);
 });

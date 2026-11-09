@@ -53,7 +53,11 @@ export default function BookDetailsDialog({
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const original = formFor(book);
-  const [form, setForm] = useState(finishing ? { ...original, dateRead: new Date().toLocaleDateString("en-CA") } : original);
+  const [form, setForm] = useState(
+    finishing
+      ? { ...original, dateRead: new Date().toLocaleDateString("en-CA") }
+      : original,
+  );
   const [coverMessage, setCoverMessage] = useState("");
   const [retryingCover, setRetryingCover] = useState(false);
   const [reread, setReread] = useState(false);
@@ -145,7 +149,11 @@ export default function BookDetailsDialog({
         <X size={20} />
       </button>
       <h2 id="book-details-title">
-        {finishing ? "Finish reading" : reread ? "Record a reread" : "Book details"}
+        {finishing
+          ? "Finish reading"
+          : reread
+            ? "Record a reread"
+            : "Book details"}
       </h2>
       <p>
         {reread
@@ -173,14 +181,26 @@ export default function BookDetailsDialog({
             <>
               <h3>Book information</h3>
               <div className="details-cover-action">
-                <button type="button" className="text-button" disabled={dirty || retryingCover} onClick={() => {
-                  setRetryingCover(true);
-                  setCoverMessage("");
-                  void onRetryCover().then(found => {
-                    setRetryingCover(false);
-                    if (found !== null) setCoverMessage(found ? "Cover refreshed." : "Couldn’t find a matching cover. Any saved cover has been kept; you can try again later.");
-                  });
-                }}>{retryingCover ? "Finding cover…" : "Retry cover"}</button>
+                <button
+                  type="button"
+                  className="text-button"
+                  disabled={dirty || retryingCover}
+                  onClick={() => {
+                    setRetryingCover(true);
+                    setCoverMessage("");
+                    void onRetryCover().then((found) => {
+                      setRetryingCover(false);
+                      if (found !== null)
+                        setCoverMessage(
+                          found
+                            ? "Cover refreshed."
+                            : "Couldn’t find a matching cover. Any saved cover has been kept; you can try again later.",
+                        );
+                    });
+                  }}
+                >
+                  {retryingCover ? "Finding cover…" : "Retry cover"}
+                </button>
                 {dirty && <p>Save your changes before retrying the cover.</p>}
                 {coverMessage && <p role="status">{coverMessage}</p>}
               </div>
@@ -238,38 +258,40 @@ export default function BookDetailsDialog({
             </>
           )}
           <h3>Reading details</h3>
-          {(book.readingStatus !== "reading" || finishing) && <>
-          <div className="details-row">
-            <label>
-              Rating
-              <input
-                type="number"
-                min={0}
-                max={5}
-                step="0.01"
-                value={form.rating}
-                onChange={(event) => change("rating", event.target.value)}
-              />
-            </label>
-            <label>
-              Finished date
-              <input
-                required={reread || finishing}
-                value={form.dateRead}
-                maxLength={10}
-                placeholder="YYYY-MM-DD or YYYY-MM"
-                aria-describedby="details-date-help"
-                onChange={(event) => change("dateRead", event.target.value)}
-              />
-            </label>
-          </div>
-          <p id="details-date-help" className="details-help">
-            Rating: 0 means unrated.{" "}
-            {reread
-              ? "Rereads need a distinct finish date; a year and month is enough."
-              : "Dates can include just a year and month; leave blank if unknown."}
-          </p>
-          </>}
+          {(book.readingStatus !== "reading" || finishing) && (
+            <>
+              <div className="details-row">
+                <label>
+                  Rating
+                  <input
+                    type="number"
+                    min={0}
+                    max={5}
+                    step="0.01"
+                    value={form.rating}
+                    onChange={(event) => change("rating", event.target.value)}
+                  />
+                </label>
+                <label>
+                  Finished date
+                  <input
+                    required={reread || finishing}
+                    value={form.dateRead}
+                    maxLength={10}
+                    placeholder="YYYY-MM-DD or YYYY-MM"
+                    aria-describedby="details-date-help"
+                    onChange={(event) => change("dateRead", event.target.value)}
+                  />
+                </label>
+              </div>
+              <p id="details-date-help" className="details-help">
+                Rating: 0 means unrated.{" "}
+                {reread
+                  ? "Rereads need a distinct finish date; a year and month is enough."
+                  : "Dates can include just a year and month; leave blank if unknown."}
+              </p>
+            </>
+          )}
           <div className="details-row">
             <label>
               Reading format
@@ -326,7 +348,13 @@ export default function BookDetailsDialog({
               Cancel
             </button>
             <button type="submit" className="import-button">
-              {busy ? "Saving…" : finishing ? "Mark finished" : reread ? "Save reread" : "Save changes"}
+              {busy
+                ? "Saving…"
+                : finishing
+                  ? "Mark finished"
+                  : reread
+                    ? "Save reread"
+                    : "Save changes"}
             </button>
           </div>
           {!reread && book.readingStatus !== "reading" && (
