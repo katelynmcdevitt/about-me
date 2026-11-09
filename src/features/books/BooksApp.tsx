@@ -38,7 +38,7 @@ import ImportPreviewDialog from "./ImportPreviewDialog";
 import AddReadingDialog from "./AddReadingDialog";
 import BookDetailsDialog from "./BookDetailsDialog";
 import YearlyDashboard from "./YearlyDashboard";
-import { needsReadingFormat } from "./readingStats";
+import { isInClassificationScope, needsReadingFormat } from "./readingStats";
 
 function BookCover({ book, index, refresh = 0 }: { book: Book; index: number; refresh?: number }) {
   const [failed, setFailed] = useState(false);
@@ -99,8 +99,9 @@ function BooksApp() {
   const needsClassification = libraryView === "unclassified";
   const needsFormat = libraryView === "formats";
   const isQueue = needsClassification || needsFormat;
-  const missingFormatCount = books.filter(needsReadingFormat).length;
-  const unclassifiedCount = books.filter(
+  const classificationBooks = books.filter(isInClassificationScope);
+  const missingFormatCount = classificationBooks.filter(needsReadingFormat).length;
+  const unclassifiedCount = classificationBooks.filter(
     (book) => !book.kind || book.kind === "Unclear",
   ).length;
   const queueComplete =
@@ -135,7 +136,7 @@ function BooksApp() {
   const filteredBooks = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     return books
-      .filter(book => isQueue || book.readingStatus !== "reading")
+      .filter(book => isQueue ? isInClassificationScope(book) : book.readingStatus !== "reading")
       .filter(
         (book) => !needsClassification || !book.kind || book.kind === "Unclear",
       )
@@ -832,13 +833,13 @@ function BooksApp() {
                 {needsClassification && (
                   <p className="classification-help">
                     Choose Fiction or Nonfiction for each book. Books leave this
-                    list once your choice is saved.
+                    list once your choice is saved. Undated books and books finished in 2022 or earlier are excluded.
                   </p>
                 )}
                 {needsFormat && (
                   <p className="classification-help">
                     Choose Audio, Physical, or Kindle for each book. Books leave
-                    this list once the format is saved.
+                    this list once the format is saved. Undated books and books finished in 2022 or earlier are excluded.
                   </p>
                 )}
                 {filteredBooks.length ? (
@@ -1077,8 +1078,8 @@ function BooksApp() {
                       <>
                         <p>
                           {needsFormat
-                            ? "Every book has an Audio, Physical, or Kindle format."
-                            : "Every book is marked as fiction or nonfiction."}
+                            ? "Every book in this queue has an Audio, Physical, or Kindle format."
+                            : "Every book in this queue is marked as fiction or nonfiction."}
                         </p>
                         <button
                           className="text-button"
@@ -1111,7 +1112,7 @@ function BooksApp() {
 
                 <footer className="list-footer">
                   <span>
-                    {filteredBooks.length} of {isQueue ? books.length : finishedBooks.length} {isQueue ? "books" : "finished books"}
+                    {filteredBooks.length} of {isQueue ? classificationBooks.length : finishedBooks.length} {isQueue ? "books" : "finished books"}
                   </span>
                   <div className="backup-actions">
                     <button onClick={exportBackup}>

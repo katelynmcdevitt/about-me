@@ -2412,3 +2412,11 @@
 .root :global(.current-reading-actions > .current-reading-delete:hover) {
   border-color: var(--pink);
 }
+
+.root :global(.monthly-pages-chart) {
+  grid-template-columns: repeat(12, minmax(42px, 1fr));
+  min-width: 636px;
+}
+.root :global(.monthly-pages-chart .month-track span) {
+  background: var(--blue);
+}

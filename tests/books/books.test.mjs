@@ -851,7 +851,7 @@ test("reading format queue saves all three choices, keeps failed saves, and stay
   const preview = getBooksStore().previewImport({
     source: "goodreads",
     filename: "formats-queue.csv",
-    csv: "Title,Author,Exclusive Shelf,Format\nNeeds print,Writer,read,\nNeeds ebook,Writer,read,\nKnown book,Writer,read,Audio",
+    csv: "Title,Author,Exclusive Shelf,Format,Date Read\nNeeds print,Writer,read,,2026/10/01\nNeeds ebook,Writer,read,,2026/10/01\nKnown book,Writer,read,Audio,2026/10/01",
   });
   getBooksStore().confirmImport(preview.id);
   render(createElement(BooksApp));
@@ -943,6 +943,10 @@ test("yearly dashboard changes years, reports missing data, and links to the for
     ).getByText("4.0"),
   );
   assert.ok(dashboard.getByRole("listitem", { name: "Jan: 1 book" }));
+  const pagesChart = within(dashboard.getByRole("region", { name: "Pages read by month" }));
+  assert.equal(pagesChart.getAllByRole("listitem").length, 12);
+  assert.ok(pagesChart.getByRole("listitem", { name: "Jan: 100 pages" }));
+  assert.ok(pagesChart.getByRole("listitem", { name: "Feb: 0 pages" }));
   assert.ok(dashboard.getByText(/1 reading has no known finish date/));
   fireEvent.change(
     dashboard.getByRole("combobox", { name: "Dashboard year" }),
@@ -958,6 +962,8 @@ test("yearly dashboard changes years, reports missing data, and links to the for
       dashboard.getByRole("article", { name: "Average rating" }),
     ).getByText("5.0"),
   );
+  assert.ok(pagesChart.getByRole("listitem", { name: "Mar: 300 pages" }));
+  assert.ok(pagesChart.getByRole("listitem", { name: "Jan: 0 pages" }));
   fireEvent.click(
     dashboard.getByRole("button", {
       name: /Set missing formats across your library/,
@@ -1103,4 +1109,27 @@ test("retry cover reloads a failed image even when the cover ID stays the same",
   fireEvent.click(within(dialog).getByRole("button", { name: "Save changes" }));
   await waitFor(() => assert.ok(!screen.queryByRole("dialog")));
   assert.equal(getBooksStore().getLibrary().books[0].title, "Updated title");
+});
+
+test("needs queues and sidebar counts exclude undated readings and readings through 2022", async () => {
+  globalThis.fetch = apiFetch;
+  const store = getBooksStore();
+  const preview = store.previewImport({ source: "goodreads", filename: "years.csv", csv: "Title,Author,Exclusive Shelf,Date Read\nOlder book,Writer,read,2021/06/01\nCutoff book,Writer,read,2022/12/31\nRecent book,Writer,read,2023/01/01\nUndated book,Writer,read," });
+  store.confirmImport(preview.id);
+  render(createElement(BooksApp));
+  await screen.findByRole("heading", { name: "Cutoff book" });
+  for (const name of [/Needs classification/, /Needs reading format/]) {
+    const button = screen.getByRole("button", { name });
+    assert.equal(button.querySelector('.side-count').textContent, "1");
+    fireEvent.click(button);
+    assert.ok(!screen.queryByRole("heading", { name: "Cutoff book" }));
+    assert.ok(!screen.queryByRole("heading", { name: "Older book" }));
+    assert.ok(screen.getByRole("heading", { name: "Recent book" }));
+    assert.ok(!screen.queryByRole("heading", { name: "Undated book" }));
+  }
+  fireEvent.click(screen.getByRole("button", { name: /All books/ }));
+  assert.ok(screen.getByRole("heading", { name: "Older book" }));
+  assert.ok(screen.getByRole("heading", { name: "Undated book" }));
+  assert.ok(screen.getByRole("heading", { name: "Cutoff book" }));
+  assert.ok(store.getLibrary().books.every(book => book.kind === "Unclear" && book.format === "Unclear"));
 });
