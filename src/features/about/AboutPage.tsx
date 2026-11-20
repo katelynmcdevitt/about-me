@@ -24,13 +24,13 @@ export default function AboutPage() {
 
         <div className={styles["contact-actions"]}>
           <a
-            className={styles["contact-link"]}
+            className={`${styles["contact-link"]} site-button`}
             href={`mailto:${profile.email}`}
           >
             Email me <span aria-hidden="true">↗</span>
           </a>
           <a
-            className={styles["contact-link"]}
+            className={`${styles["contact-link"]} site-button`}
             href={profile.linkedin}
             target="_blank"
             rel="noopener noreferrer"
@@ -38,7 +38,7 @@ export default function AboutPage() {
             Connect on LinkedIn <span aria-hidden="true">↗</span>
           </a>
           <a
-            className={styles["contact-link"]}
+            className={`${styles["contact-link"]} site-button`}
             href="/KatelynMcDevittResume.pdf"
             download
           >

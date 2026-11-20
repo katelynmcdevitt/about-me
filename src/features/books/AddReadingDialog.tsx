@@ -46,7 +46,7 @@ export default function AddReadingDialog({
           {error}
         </div>
       )}
-      <form
+      <form className="site-form"
         onSubmit={(event) => {
           event.preventDefault();
           void onSave({ title, author, format }).then((saved) => {
@@ -91,7 +91,7 @@ export default function AddReadingDialog({
             <button type="button" className="text-button" onClick={close}>
               Cancel
             </button>
-            <button className="import-button" type="submit">
+            <button className="import-button site-button" type="submit">
               {busy ? "Finding cover & saving…" : "Add book"}
             </button>
           </div>

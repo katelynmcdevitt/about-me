@@ -478,7 +478,7 @@ function BooksApp() {
                   <option value="sheets">Google Sheets</option>
                 </select>
               </label>
-              <label htmlFor="goodreads-file" className="import-button">
+              <label htmlFor="goodreads-file" className="import-button site-button">
                 <Upload size={16} /> Import CSV
               </label>
               <input
@@ -559,7 +559,7 @@ function BooksApp() {
                   <span className="heading-count">{currentBooks.length}</span>
                 </h2>
                 <button
-                  className="import-button"
+                  className="import-button site-button"
                   onClick={() => {
                     db.setError("");
                     setAddingReading(true);
@@ -1210,7 +1210,7 @@ function BooksApp() {
                         Clear filters
                       </button>
                     ) : (
-                      <label htmlFor="goodreads-file" className="import-button">
+                      <label htmlFor="goodreads-file" className="import-button site-button">
                         <Upload size={16} /> Choose Goodreads CSV
                       </label>
                     )}

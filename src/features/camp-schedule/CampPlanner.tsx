@@ -86,7 +86,7 @@ function Planner({
           <div className="page-content">
             <div className="page-heading">
               <h1>{p.tab}</h1>
-              <button className="primary" onClick={() => p.open()}>
+              <button className="primary site-button" onClick={() => p.open()}>
                 <Plus size={17} /> Add a camp
               </button>
             </div>

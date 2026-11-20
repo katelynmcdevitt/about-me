@@ -385,3 +385,5 @@ When adding a title, the watchlist looks for matching cover art through TVMaze (
 ### Shared site styles
 
 `src/app/globals.css` defines the site-wide palette, font tokens, and base styles. The About page, apps landing page, and each app use those shared tokens in their CSS Modules; app-specific layout and component styles remain scoped to each app. Change the `--site-*` values in the global stylesheet to update shared colors across the site.
+
+Shared UI primitives live in `src/app/globals.css`: use `site-button` for primary actions (including action links and file-picker labels), and `site-form` on forms whose text fields, selects, and textareas should use the standard field appearance. Scoped styles still handle placement, compact controls, and app-specific interactions. Add new shared variants there when a common pattern needs a different treatment.

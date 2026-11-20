@@ -171,7 +171,7 @@ export default function BookDetailsDialog({
           )}
         </div>
       )}
-      <form
+      <form className="site-form"
         onSubmit={(event) => {
           void submit(event);
         }}
@@ -347,7 +347,7 @@ export default function BookDetailsDialog({
             <button type="button" className="text-button" onClick={close}>
               Cancel
             </button>
-            <button type="submit" className="import-button">
+            <button type="submit" className="import-button site-button">
               {busy
                 ? "Saving…"
                 : finishing

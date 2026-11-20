@@ -256,7 +256,7 @@ export default function ImportPreviewDialog({
           Cancel
         </button>
         <button
-          className="import-button"
+          className="import-button site-button"
           disabled={busy || !canConfirm}
           onClick={onConfirm}
         >

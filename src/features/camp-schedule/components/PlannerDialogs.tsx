@@ -68,7 +68,7 @@ export default function PlannerDialogs({ p }: { p: PlannerState }) {
               </p>
             )}
             <button
-              className="primary"
+              className="primary site-button"
               onClick={() => {
                 void p.saveSettings();
               }}
@@ -77,7 +77,7 @@ export default function PlannerDialogs({ p }: { p: PlannerState }) {
             </button>
           </>
         ) : (
-          <form
+          <form className="site-form"
             onSubmit={(e) => {
               e.preventDefault();
               p.save();
@@ -241,7 +241,7 @@ export default function PlannerDialogs({ p }: { p: PlannerState }) {
                   Delete camp
                 </button>
               )}
-              <button className="primary" type="submit">
+              <button className="primary site-button" type="submit">
                 {p.editing ? "Save changes" : "Add camp"} <Check size={16} />
               </button>
             </div>
