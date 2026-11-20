@@ -375,3 +375,7 @@ not covered by those tests.
 Shelf Notes supports **Currently reading** at the top of the library. Use **Add currently reading** to save a title, author, and optional reading format. Select **Mark finished** to record a finish date and rating; it then joins your finished books and reading statistics. Currently reading books are included in library and database backups.
 
 When adding a currently reading book, Shelf Notes searches [Open Library](https://openlibrary.org/dev/docs/api/search) by title and author for a matching cover. The cover reference is saved locally and included in backups. Internet access is needed for lookup and images; missing covers or an unavailable service leave the placeholder in place without preventing a save.
+
+## The Watchlist
+
+Visit `/apps/watchlist` to keep a personal list of movies and TV shows. Add and edit titles, where to watch them, notes, and their status; search or filter the collection as it grows. Entries are saved in this browser's local storage on this device. Clearing browser data removes the list, and it does not automatically sync between browsers or devices.
