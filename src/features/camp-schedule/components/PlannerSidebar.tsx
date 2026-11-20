@@ -68,7 +68,7 @@ export default function PlannerSidebar({ p }: { p: PlannerState }) {
       <button className="settings-link" onClick={() => p.setSettings(true)}>
         <Settings2 size={17} /> Family settings
       </button>
-      <Link className="back-link" href="/apps">
+      <Link className="back-link site-back-link" href="/apps">
         <ArrowLeft size={14} /> All apps
       </Link>
       <div className="local-note" role="status">

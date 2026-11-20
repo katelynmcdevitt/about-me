@@ -82,3 +82,21 @@ a:focus-visible {
   outline: 2px solid var(--site-accent);
   outline-offset: 3px;
 }
+
+/* Shared navigation back to the apps directory. */
+.site-back-link.site-back-link {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  flex-shrink: 0;
+  gap: 7px;
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid var(--site-border);
+  border-radius: 6px;
+  background: var(--site-surface-raised);
+  color: var(--site-accent);
+  font: 600 12px var(--site-font-sans);
+  white-space: nowrap;
+}
+.site-back-link.site-back-link:hover { border-color: var(--site-accent); }

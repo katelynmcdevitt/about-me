@@ -452,7 +452,7 @@ function BooksApp() {
               </button>
             )}
           </nav>
-          <Link className="back-link" href="/apps">
+          <Link className="back-link site-back-link" href="/apps">
             <ArrowLeft size={14} /> All apps
           </Link>
         </aside>

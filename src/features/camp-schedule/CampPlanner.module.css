@@ -1937,22 +1937,6 @@
 
 .root :global(.back-link) {
   margin: 0 10px 15px;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  flex-shrink: 0;
-  min-height: 36px;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface-raised);
-  color: var(--accent);
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-.root :global(.back-link:hover) {
-  border-color: var(--accent);
 }
 .root :global(.import-backup) {
   position: relative;

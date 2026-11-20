@@ -1681,22 +1681,6 @@
 }
 .root :global(.back-link) {
   margin-top: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  flex-shrink: 0;
-  min-height: 36px;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--surface-raised);
-  color: var(--green);
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-.root :global(.back-link:hover) {
-  border-color: var(--green);
 }
 .root :global(.backup-actions) {
   display: flex;

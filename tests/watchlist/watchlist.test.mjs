@@ -111,3 +111,28 @@ test("editing preserves cover metadata and a broken image falls back to the plac
   await waitFor(() => assert.equal(saved()[0].status, "Watching"));
   assert.deepEqual(saved()[0].cover, cover);
 });
+
+test("sidebar navigation tracks status counts and selected filter after edits", async () => {
+  localStorage.setItem("watchlist-v1", JSON.stringify([entry("1", "Arrival", "Movie", "Watched"), entry("2", "Severance", "TV show", "Watching"), entry("3", "The Bear", "TV show")]));
+  render(createElement(Watchlist));
+  const navigation = within(screen.getByRole("navigation", { name: "Filter by status" }));
+  const all = navigation.getByRole("button", { name: "All titles" });
+  const watching = navigation.getByRole("button", { name: "Watching" });
+  const watched = navigation.getByRole("button", { name: "Watched" });
+  assert.equal(all.getAttribute("aria-pressed"), "true");
+  assert.match(all.textContent, /3/);
+  assert.match(watching.textContent, /1/);
+  assert.match(watched.textContent, /1/);
+  fireEvent.click(watching);
+  assert.equal(watching.getAttribute("aria-pressed"), "true");
+  assert.equal(all.getAttribute("aria-pressed"), "false");
+  assert.equal(screen.queryByRole("heading", { name: "Arrival" }), null);
+  fireEvent.click(screen.getByRole("button", { name: /edit details/i }));
+  const form = within(screen.getByRole("dialog"));
+  fireEvent.change(form.getByLabelText("Status"), { target: { value: "Watched" } });
+  fireEvent.click(form.getByRole("button", { name: /save changes/i }));
+  await waitFor(() => assert.equal(screen.queryByRole("heading", { name: "Severance" }), null));
+  assert.match(watching.textContent, /0/);
+  assert.match(watched.textContent, /2/);
+  assert.equal(screen.getByRole("link", { name: /all apps/i }).getAttribute("href"), "/apps");
+});
