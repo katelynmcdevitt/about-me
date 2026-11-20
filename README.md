@@ -379,3 +379,9 @@ When adding a currently reading book, Shelf Notes searches [Open Library](https:
 ## The Watchlist
 
 Visit `/apps/watchlist` to keep a personal list of movies and TV shows. Add and edit titles, where to watch them, notes, and their status; search or filter the collection as it grows. Entries are saved in this browser's local storage on this device. Clearing browser data removes the list, and it does not automatically sync between browsers or devices.
+
+When adding a title, the watchlist looks for matching cover art through TVMaze (TV shows) or the iTunes Search API (movies). The title and type are sent to the relevant service, and artwork loads from that service when displayed. An internet connection is required; if no exact title match is found or the service is unavailable, the title is still saved with a placeholder. Existing titles are not searched automatically.
+
+### Shared site styles
+
+`src/app/globals.css` defines the site-wide palette, font tokens, and base styles. The About page, apps landing page, and each app use those shared tokens in their CSS Modules; app-specific layout and component styles remain scoped to each app. Change the `--site-*` values in the global stylesheet to update shared colors across the site.

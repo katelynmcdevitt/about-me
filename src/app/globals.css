@@ -1,8 +1,29 @@
 @import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap");
 :root {
-  font-family: "DM Sans", sans-serif;
-  color: #e5efef;
-  background: #101b24;
+  /* Shared design tokens for every page and app. */
+  --site-background: var(--site-background);
+  --site-surface: #15252f;
+  --site-surface-raised: #192d36;
+  --site-border: #34505b;
+  --site-text: #e5efef;
+  --site-text-muted: #9fb5be;
+  --site-text-subtle: #8faab2;
+  --site-accent: #85d6bb;
+  --site-accent-hover: #a4e6d0;
+  --site-accent-ink: #102c27;
+  --site-teal: #326b68;
+  --site-blue: #85b6c4;
+  --site-pink: #f0a9cb;
+  --site-gold: #edc58e;
+  --site-mint-surface: #1c3c38;
+  --site-blue-surface: #1c3444;
+  --site-warning-surface: #3b3024;
+  --site-pink-surface: #3d283b;
+  --site-font-sans: "DM Sans", sans-serif;
+  --site-font-heading: "Manrope", sans-serif;
+  font-family: var(--site-font-sans);
+  color: var(--site-text);
+  background: var(--site-background);
   color-scheme: dark;
   font-synthesis: none;
 }
@@ -18,10 +39,10 @@ a {
   text-decoration: none;
 }
 a:focus-visible {
-  outline: 2px solid #85d6bb;
+  outline: 2px solid var(--site-accent);
   outline-offset: 7px;
 }
 ::selection {
-  background: #326b68;
+  background: var(--site-teal);
   color: #fff;
 }

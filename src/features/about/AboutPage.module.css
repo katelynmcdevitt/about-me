@@ -11,7 +11,7 @@
   flex: 1;
 }
 .site-shell h1 {
-  font-family: "Manrope", sans-serif;
+  font-family: var(--site-font-heading);
   font-size: clamp(42px, 6.2vw, 72px);
   line-height: 1.15;
   letter-spacing: -3px;
@@ -21,7 +21,7 @@
 .site-shell h1 em {
   font-family: Georgia, serif;
   font-weight: 400;
-  color: #85d6bb;
+  color: var(--site-accent);
 }
 .site-shell :where(p) {
   max-width: 620px;
@@ -29,13 +29,13 @@
   margin: 0;
 }
 .location {
-  color: #85b6c4;
+  color: var(--site-blue);
   font-size: 13px;
   margin-bottom: 20px;
 }
 .bio {
   font-size: 15px;
-  color: #9fb5be;
+  color: var(--site-text-muted);
   margin-top: 12px;
 }
 .contact-actions {
@@ -50,14 +50,14 @@
   gap: 28px;
   padding: 14px 20px;
   border-radius: 6px;
-  background: #85d6bb;
-  color: #102c27;
+  background: var(--site-accent);
+  color: var(--site-accent-ink);
   font-size: 14px;
   font-weight: 600;
   transition: background 0.15s ease;
 }
 .contact-link:hover {
-  background: #a4e6d0;
+  background: var(--site-accent-hover);
 }
 .site-shell footer {
   display: flex;
@@ -65,7 +65,7 @@
   gap: 16px;
   padding: 25px 0;
   border-top: 1px solid #2a3b46;
-  color: #8faab2;
+  color: var(--site-text-subtle);
   font-size: 11px;
 }
 @media (max-width: 640px) {

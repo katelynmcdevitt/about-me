@@ -1,19 +1,19 @@
 @import url("https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;1,9..144,400&display=swap");
 .root {
-  --paper: #101b24;
-  --sidebar: #15252f;
-  --surface-raised: #192d36;
-  --ink: #e5efef;
-  --muted: #9fb5be;
-  --subtle: #8faab2;
-  --line: #34505b;
-  --green: #85d6bb;
-  --green-dark: #a4e6d0;
-  --accent-ink: #102c27;
-  --teal: #326b68;
-  --blue: #85b6c4;
-  --pink: #f0a9cb;
-  --gold: #edc58e;
+  --paper: var(--site-background);
+  --sidebar: var(--site-surface);
+  --surface-raised: var(--site-surface-raised);
+  --ink: var(--site-text);
+  --muted: var(--site-text-muted);
+  --subtle: var(--site-text-subtle);
+  --line: var(--site-border);
+  --green: var(--site-accent);
+  --green-dark: var(--site-accent-hover);
+  --accent-ink: var(--site-accent-ink);
+  --teal: var(--site-teal);
+  --blue: var(--site-blue);
+  --pink: var(--site-pink);
+  --gold: var(--site-gold);
   --display: "Fraunces", Georgia, serif;
   --sans: "DM Sans", sans-serif;
 
@@ -502,7 +502,7 @@
   height: 128px;
   border: 1px solid rgba(133, 214, 187, 0.2);
   border-radius: 50%;
-  background: #1c3c38;
+  background: var(--site-mint-surface);
 }
 
 .root :global(.book-stack) {
@@ -517,7 +517,7 @@
   width: 144px;
   top: 125px;
   left: 38px;
-  background: #326b68;
+  background: var(--site-teal);
   transform: rotate(-11deg);
 }
 
@@ -525,7 +525,7 @@
   width: 161px;
   top: 122px;
   left: 31px;
-  background: #85b6c4;
+  background: var(--site-blue);
   transform: rotate(7deg);
 }
 
@@ -534,7 +534,7 @@
   height: 47px;
   top: 149px;
   left: 39px;
-  background: #3d283b;
+  background: var(--site-pink-surface);
   transform: rotate(-3deg);
 }
 
@@ -578,7 +578,7 @@
 .root :global(.demo-notice) {
   border: 1px solid #755b36;
   color: var(--gold);
-  background: #3b3024;
+  background: var(--site-warning-surface);
 }
 
 .root :global(.demo-notice > span) {
@@ -590,14 +590,14 @@
 }
 
 .root :global(.demo-notice p) {
-  color: #edc58e;
+  color: var(--site-gold);
 }
 
 .root :global(.notice) {
   justify-content: space-between;
-  border: 1px solid #326b68;
+  border: 1px solid var(--site-teal);
   color: var(--green);
-  background: #1c3c38;
+  background: var(--site-mint-surface);
 }
 
 .root :global(.stats-row) {
@@ -1003,16 +1003,16 @@
   background: #123a52;
 }
 .root :global(.cover-2) {
-  background: #3d283b;
+  background: var(--site-pink-surface);
 }
 .root :global(.cover-3) {
-  background: #326b68;
+  background: var(--site-teal);
 }
 .root :global(.cover-4) {
-  background: #3b3024;
+  background: var(--site-warning-surface);
 }
 .root :global(.cover-5) {
-  background: #1c3444;
+  background: var(--site-blue-surface);
 }
 
 .root :global(.book-info) {
@@ -1062,10 +1062,10 @@
   align-items: center;
   gap: 4px;
   padding: 1px 5px 1px 7px;
-  border: 1px solid #34505b;
+  border: 1px solid var(--site-border);
   border-radius: 3px;
   color: #b8d4dc;
-  background: #192d36;
+  background: var(--site-surface-raised);
   font-size: 9px;
   line-height: 1.2;
 }

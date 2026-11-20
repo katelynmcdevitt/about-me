@@ -6,16 +6,16 @@
 }
 
 .page a {
-  color: #85d6bb;
+  color: var(--site-accent);
 }
 .page h1 {
-  font-family: "Manrope", sans-serif;
+  font-family: var(--site-font-heading);
   font-size: 48px;
   font-weight: 500;
 }
 .page p {
   max-width: 620px;
-  color: #9fb5be;
+  color: var(--site-text-muted);
   line-height: 1.8;
 }
 
@@ -35,27 +35,27 @@
   display: block;
   max-width: 480px;
   padding: 28px;
-  background: #15252f;
-  border: 1px solid #34505b;
+  background: var(--site-surface);
+  border: 1px solid var(--site-border);
   border-radius: 12px;
-  color: #e5efef;
+  color: var(--site-text);
   transition: border-color 0.15s ease;
 }
 .page .card:hover {
-  border-color: #85d6bb;
+  border-color: var(--site-accent);
 }
 .card h2 {
   display: flex;
   justify-content: space-between;
-  font-family: "Manrope", sans-serif;
+  font-family: var(--site-font-heading);
   font-size: 24px;
   font-weight: 500;
 }
 .card h2 span {
-  color: #85d6bb;
+  color: var(--site-accent);
 }
 .eyebrow {
-  color: #85b6c4;
+  color: var(--site-blue);
   font-size: 11px;
   letter-spacing: 1.5px;
 }
