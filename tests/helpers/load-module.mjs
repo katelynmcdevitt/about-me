@@ -12,6 +12,8 @@ function moduleURL(filename) {
       module: ts.ModuleKind.ESNext,
       target: ts.ScriptTarget.ES2022,
       jsx: ts.JsxEmit.ReactJSX,
+      inlineSourceMap: true,
+      inlineSources: true,
     },
     fileName: filename,
   }).outputText;

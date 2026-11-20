@@ -387,3 +387,11 @@ When adding a title, the watchlist looks for matching cover art through TVMaze (
 `src/app/globals.css` defines the site-wide palette, font tokens, and base styles. The About page, apps landing page, and each app use those shared tokens in their CSS Modules; app-specific layout and component styles remain scoped to each app. Change the `--site-*` values in the global stylesheet to update shared colors across the site.
 
 Shared UI primitives live in `src/app/globals.css`: use `site-button` for primary actions (including action links and file-picker labels), and `site-form` on forms whose text fields, selects, and textareas should use the standard field appearance. Scoped styles still handle placement, compact controls, and app-specific interactions. Add new shared variants there when a common pattern needs a different treatment.
+
+### Test coverage
+
+Run `npm run test:coverage` to execute the test suite and print Node's coverage report followed by a list of source files not loaded by the tests. The test loader supplies inline source maps for TypeScript and TSX. Node's percentages still cover only loaded files, include test helpers, and can be misleading for transpiled code; they are not whole-project coverage. The unloaded list includes type-only files and framework entry points, which may not need direct tests. Loaded does not mean thoroughly tested. Review the tests and the unloaded list alongside the numbers. Node marks its coverage reporting as experimental.
+
+The Books and Camp Days suites include database, API, and React interaction tests. Watchlist currently tests its cover lookup; its add, edit, delete, storage, filtering, and browser layout flows do not yet have automated UI tests. JSDOM interaction tests do not verify browser layout.
+
+For Codex-driven commits, `AGENTS.md` requests the coverage report and a summary of relevant gaps. This does not install a Git hook or run checks automatically for commits made outside Codex.
