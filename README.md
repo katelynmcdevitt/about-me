@@ -378,7 +378,7 @@ When adding a currently reading book, Shelf Notes searches [Open Library](https:
 
 ## The Watchlist
 
-Visit `/apps/watchlist` to keep a personal list of movies and TV shows. Add and edit titles, where to watch them, notes, and their status; search or filter the collection as it grows. Entries are saved in this browser's local storage on this device. Clearing browser data removes the list, and it does not automatically sync between browsers or devices.
+Visit `/apps/watchlist` to keep a personal list of movies and TV shows. Add and edit titles, where to watch them, notes, and their status; search or filter the collection as it grows. Entries are saved in a local SQLite database at `data/watchlist.sqlite`, so they persist across app restarts and are shared by browsers using this local server. They do not sync to other devices. Set `WATCHLIST_DATABASE_PATH` before starting the app to use a different database path.
 
 When adding a title, the watchlist looks for matching cover art through TVMaze (TV shows) or the iTunes Search API (movies). The title and type are sent to the relevant service, and artwork loads from that service when displayed. An internet connection is required; if no exact title match is found or the service is unavailable, the title is still saved with a placeholder. Existing titles are not searched automatically.
 
@@ -395,3 +395,7 @@ Run `npm run test:coverage` to execute the test suite and print Node's coverage 
 The Books and Camp Days suites include database, API, and React interaction tests. Watchlist tests its cover lookup and add, edit, delete, storage, and filtering interactions. Browser layout is not covered by these tests. JSDOM interaction tests do not verify browser layout.
 
 For Codex-driven commits, `AGENTS.md` requests the coverage report and a summary of relevant gaps. This does not install a Git hook or run checks automatically for commits made outside Codex.
+
+When the Watchlist first opens with an existing `watchlist-v1` browser save, it automatically merges the entries into the database once, preserving existing database entries with the same ID. The browser copy is left untouched. If migration fails, the app reports the error and leaves the browser copy intact; reload to retry. Data from another browser or hostname is not automatically transferred after the one-time migration. Changes appear only after a database save succeeds; if another tab changes the list, reload before retrying.
+
+Back up the full Watchlist database with `npm run db:backup:watchlist` (or append `-- /absolute/path/backup.sqlite` to choose a new filename). The backup uses SQLite's online backup API and defaults to `backups/`. To restore, stop the app, move the current Watchlist database and its `-wal` and `-shm` sidecars to a safe location, copy the chosen backup to `data/watchlist.sqlite` or the configured path, then restart and verify it. Do not replace the Books or Camp databases.

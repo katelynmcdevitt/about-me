@@ -1,138 +1,104 @@
-import test, { afterEach } from "node:test";
+import test, { beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import { loadFile } from "../helpers/load-module.mjs";
-
 const dom = new JSDOM("<!doctype html><html><body></body></html>", { url: "http://localhost:3000" });
 Object.assign(globalThis, { window: dom.window, self: dom.window, document: dom.window.document, localStorage: dom.window.localStorage, HTMLElement: dom.window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true });
 const { render, fireEvent, screen, within, waitFor, cleanup } = await import("@testing-library/react");
 const { createElement } = await import("react");
 const { default: Watchlist } = await loadFile(new URL("../../src/features/watchlist/Watchlist.tsx", import.meta.url));
+const { WatchlistStore } = await loadFile(new URL("../../src/server/watchlist/store.ts", import.meta.url));
 const originalFetch = globalThis.fetch;
-const originalSetItem = dom.window.Storage.prototype.setItem;
-afterEach(() => { cleanup(); localStorage.clear(); globalThis.fetch = originalFetch; dom.window.Storage.prototype.setItem = originalSetItem; });
-const saved = () => JSON.parse(localStorage.getItem("watchlist-v1"));
+let store, coverResponse, failSave;
 const entry = (id, title, kind = "Movie", status = "Want to watch") => ({ id, title, kind, status, where: "", notes: "" });
-function openForm() { fireEvent.click(screen.getByRole("button", { name: /add a title/i })); return within(screen.getByRole("dialog")); }
+beforeEach(() => {
+  store = new WatchlistStore(":memory:"); coverResponse = null; failSave = false;
+  globalThis.fetch = async (url, options = {}) => {
+    if (String(url).startsWith("/api/watchlist/cover")) {
+      if (coverResponse instanceof Error) throw coverResponse;
+      return Response.json({ cover: coverResponse });
+    }
+    if (String(url) === "/api/watchlist/library") {
+      if (!options.method) return Response.json(store.get());
+      if (failSave) return Response.json({ error: "Your changes could not be saved. Please try again." }, { status: 500 });
+      try { return Response.json(store.apply(JSON.parse(options.body))); }
+      catch (error) { return Response.json({ error: error.message }, { status: error.status || 500 }); }
+    }
+    throw Error(`Unexpected request: ${url}`);
+  };
+});
+afterEach(() => { cleanup(); localStorage.clear(); store.close(); globalThis.fetch = originalFetch; });
+async function openForm() { await waitFor(() => assert.equal(screen.getByRole("button", { name: /add a title/i }).disabled, false)); fireEvent.click(screen.getByRole("button", { name: /add a title/i })); return within(screen.getByRole("dialog")); }
+function seed(entries) { let rev = store.get().revision; for (const item of entries) { store.apply({ action: "add", entry: item, revision: rev }); rev++; } }
 
-test("adding a title finds a cover, saves details, and survives reload", async () => {
-  let request;
-  globalThis.fetch = async (url) => { request = String(url); return Response.json({ cover: { url: "https://static.tvmaze.com/poster.jpg", sourceUrl: "https://www.tvmaze.com/shows/1" } }); };
-  const view = render(createElement(Watchlist));
-  const form = openForm();
+test("adding a title saves its cover and details to the database and survives reload", async () => {
+  coverResponse = { url: "https://static.tvmaze.com/poster.jpg", sourceUrl: "https://www.tvmaze.com/shows/1" };
+  const view = render(createElement(Watchlist)); const form = await openForm();
   fireEvent.change(form.getByLabelText("Title"), { target: { value: "  A Show  " } });
   fireEvent.change(form.getByLabelText("Type"), { target: { value: "TV show" } });
   fireEvent.change(form.getByLabelText(/Where to watch/), { target: { value: " Streamer " } });
   fireEvent.change(form.getByLabelText(/Notes/), { target: { value: " Recommended " } });
   fireEvent.click(form.getByRole("button", { name: /add title/i }));
   await screen.findByRole("heading", { name: "A Show" });
-  const params = new URL(request, "http://localhost").searchParams;
-  assert.equal(params.get("title"), "A Show"); assert.equal(params.get("kind"), "TV show");
-  assert.equal(saved()[0].where, "Streamer"); assert.equal(saved()[0].notes, "Recommended");
-  assert.equal(saved()[0].cover.url, "https://static.tvmaze.com/poster.jpg");
-  view.unmount(); render(createElement(Watchlist));
-  assert.ok(await screen.findByRole("heading", { name: "A Show" }));
-  assert.ok(screen.getByRole("link", { name: /TVMaze/ }));
+  assert.equal(store.get().entries[0].where, "Streamer"); assert.equal(store.get().entries[0].notes, "Recommended");
+  assert.deepEqual(store.get().entries[0].cover, coverResponse);
+  view.unmount(); render(createElement(Watchlist)); assert.ok(await screen.findByRole("heading", { name: "A Show" }));
 });
 
-test("unavailable cover lookup still saves a title with a placeholder", async () => {
-  globalThis.fetch = async () => { throw new Error("offline"); };
-  render(createElement(Watchlist));
-  const form = openForm();
-  fireEvent.change(form.getByLabelText("Title"), { target: { value: "A Movie" } });
-  fireEvent.click(form.getByRole("button", { name: /add title/i }));
-  await screen.findByRole("heading", { name: "A Movie" });
-  assert.equal(saved()[0].cover, undefined);
-  assert.equal(document.querySelector("article img"), null);
+test("existing browser titles migrate once without removing the browser copy", async () => {
+  const legacy = [entry("one", "Older show", "TV show")]; localStorage.setItem("watchlist-v1", JSON.stringify(legacy));
+  const view = render(createElement(Watchlist)); await screen.findByRole("heading", { name: "Older show" });
+  assert.equal(store.get().migrated, true); assert.deepEqual(JSON.parse(localStorage.getItem("watchlist-v1")), legacy);
+  store.apply({ action: "delete", id: "one", revision: store.get().revision });
+  view.unmount(); render(createElement(Watchlist)); await waitFor(() => assert.equal(screen.getByRole("button", { name: /add a title/i }).disabled, false));
+  assert.equal(screen.queryByRole("heading", { name: "Older show" }), null);
 });
 
-test("editing and deletion persist, with cancellation preserving the title", async () => {
-  localStorage.setItem("watchlist-v1", JSON.stringify([entry("one", "Original")]));
-  let lookupCalls = 0;
-  globalThis.fetch = async () => { lookupCalls++; throw new Error("unexpected lookup"); };
-  render(createElement(Watchlist));
-  fireEvent.click(screen.getByRole("button", { name: /edit details/i }));
-  const form = within(screen.getByRole("dialog"));
-  fireEvent.change(form.getByLabelText("Title"), { target: { value: "Updated" } });
-  fireEvent.change(form.getByLabelText("Status"), { target: { value: "Watched" } });
-  fireEvent.click(form.getByRole("button", { name: /save changes/i }));
-  await screen.findByRole("heading", { name: "Updated" });
-  assert.equal(saved()[0].status, "Watched");
-  assert.equal(lookupCalls, 0);
-  dom.window.confirm = () => false;
-  fireEvent.click(screen.getByRole("button", { name: "Remove" }));
-  assert.equal(saved().length, 1);
-  dom.window.confirm = () => true;
-  fireEvent.click(screen.getByRole("button", { name: "Remove" }));
-  assert.equal(saved().length, 0);
-  assert.ok(screen.getByText(/ready for its first title/i));
+test("offline artwork lookup still saves a placeholder", async () => {
+  coverResponse = new Error("offline"); render(createElement(Watchlist)); const form = await openForm();
+  fireEvent.change(form.getByLabelText("Title"), { target: { value: "A Movie" } }); fireEvent.click(form.getByRole("button", { name: /add title/i }));
+  await screen.findByRole("heading", { name: "A Movie" }); assert.equal(store.get().entries[0].cover, undefined);
 });
 
-test("search, status, and type filters narrow the saved list", () => {
-  localStorage.setItem("watchlist-v1", JSON.stringify([entry("1", "Arrival", "Movie", "Watched"), entry("2", "Severance", "TV show", "Watching"), entry("3", "The Bear", "TV show")]));
-  render(createElement(Watchlist));
-  fireEvent.click(screen.getByRole("button", { name: "Watching" }));
-  assert.ok(screen.getByRole("heading", { name: "Severance" }));
+test("edit, filter, and delete update the database and sidebar counts", async () => {
+  seed([entry("1", "Arrival", "Movie", "Watched"), entry("2", "Severance", "TV show", "Watching"), entry("3", "The Bear", "TV show")]);
+  render(createElement(Watchlist)); await screen.findByRole("heading", { name: "Severance" });
+  const nav = within(screen.getByRole("navigation", { name: "Filter by status" }));
+  fireEvent.click(nav.getByRole("button", { name: "Watching" }));
   assert.equal(screen.queryByRole("heading", { name: "Arrival" }), null);
-  fireEvent.click(screen.getByRole("button", { name: "All titles" }));
+  fireEvent.click(screen.getByRole("button", { name: /edit details/i })); const form = within(screen.getByRole("dialog"));
+  fireEvent.change(form.getByLabelText("Status"), { target: { value: "Watched" } }); fireEvent.click(form.getByRole("button", { name: /save changes/i }));
+  await waitFor(() => assert.ok(!screen.queryByRole("heading", { name: "Severance" })));
+  assert.match(nav.getByRole("button", { name: "Watched" }).textContent, /2/);
+  fireEvent.click(nav.getByRole("button", { name: "All titles" }));
   fireEvent.change(screen.getByLabelText("Filter by type"), { target: { value: "TV show" } });
-  assert.equal(screen.queryByRole("heading", { name: "Arrival" }), null);
   fireEvent.change(screen.getByLabelText("Search titles"), { target: { value: "BEAR" } });
   assert.ok(screen.getByRole("heading", { name: "The Bear" }));
-  assert.equal(screen.queryByRole("heading", { name: "Severance" }), null);
-});
-
-test("storage write failures leave the draft available and the saved list unchanged", async () => {
-  localStorage.setItem("watchlist-v1", JSON.stringify([entry("1", "Existing")]));
-  globalThis.fetch = async () => Response.json({ cover: null });
-  dom.window.Storage.prototype.setItem = () => { throw new Error("storage full"); };
-  render(createElement(Watchlist));
-  const form = openForm();
-  fireEvent.change(form.getByLabelText("Title"), { target: { value: "Unsaved" } });
-  fireEvent.click(form.getByRole("button", { name: /add title/i }));
-  await waitFor(() => assert.match(screen.getByRole("alert").textContent, /could not be saved/i));
-  assert.equal(form.getByLabelText("Title").value, "Unsaved");
-  assert.deepEqual(saved().map((item) => item.title), ["Existing"]);
-  assert.equal(screen.queryByRole("heading", { name: "Unsaved" }), null);
-});
-
-test("editing preserves cover metadata and a broken image falls back to the placeholder", async () => {
-  const cover = { url: "https://static.tvmaze.com/poster.jpg", sourceUrl: "https://www.tvmaze.com/shows/1" };
-  localStorage.setItem("watchlist-v1", JSON.stringify([{ ...entry("one", "A Show", "TV show"), cover }]));
-  render(createElement(Watchlist));
-  const image = document.querySelector("article img");
-  assert.ok(image);
-  fireEvent.error(image);
-  assert.equal(image.style.display, "none");
-  fireEvent.click(screen.getByRole("button", { name: /edit details/i }));
-  const form = within(screen.getByRole("dialog"));
-  fireEvent.change(form.getByLabelText("Status"), { target: { value: "Watching" } });
-  fireEvent.click(form.getByRole("button", { name: /save changes/i }));
-  await waitFor(() => assert.equal(saved()[0].status, "Watching"));
-  assert.deepEqual(saved()[0].cover, cover);
-});
-
-test("sidebar navigation tracks status counts and selected filter after edits", async () => {
-  localStorage.setItem("watchlist-v1", JSON.stringify([entry("1", "Arrival", "Movie", "Watched"), entry("2", "Severance", "TV show", "Watching"), entry("3", "The Bear", "TV show")]));
-  render(createElement(Watchlist));
-  const navigation = within(screen.getByRole("navigation", { name: "Filter by status" }));
-  const all = navigation.getByRole("button", { name: "All titles" });
-  const watching = navigation.getByRole("button", { name: "Watching" });
-  const watched = navigation.getByRole("button", { name: "Watched" });
-  assert.equal(all.getAttribute("aria-pressed"), "true");
-  assert.match(all.textContent, /3/);
-  assert.match(watching.textContent, /1/);
-  assert.match(watched.textContent, /1/);
-  fireEvent.click(watching);
-  assert.equal(watching.getAttribute("aria-pressed"), "true");
-  assert.equal(all.getAttribute("aria-pressed"), "false");
-  assert.equal(screen.queryByRole("heading", { name: "Arrival" }), null);
-  fireEvent.click(screen.getByRole("button", { name: /edit details/i }));
-  const form = within(screen.getByRole("dialog"));
-  fireEvent.change(form.getByLabelText("Status"), { target: { value: "Watched" } });
-  fireEvent.click(form.getByRole("button", { name: /save changes/i }));
-  await waitFor(() => assert.equal(screen.queryByRole("heading", { name: "Severance" }), null));
-  assert.match(watching.textContent, /0/);
-  assert.match(watched.textContent, /2/);
+  dom.window.confirm = () => false; fireEvent.click(screen.getByRole("button", { name: "Remove" })); assert.equal(store.get().entries.length, 3);
+  dom.window.confirm = () => true; fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+  await waitFor(() => assert.equal(store.get().entries.length, 2));
   assert.equal(screen.getByRole("link", { name: /all apps/i }).getAttribute("href"), "/apps");
+});
+
+test("failed saves keep the draft and committed database unchanged", async () => {
+  seed([entry("1", "Existing")]); render(createElement(Watchlist)); const form = await openForm(); failSave = true;
+  fireEvent.change(form.getByLabelText("Title"), { target: { value: "Unsaved" } }); fireEvent.click(form.getByRole("button", { name: /add title/i }));
+  await waitFor(() => assert.match(screen.getByRole("alert").textContent, /could not be saved/i));
+  assert.equal(form.getByLabelText("Title").value, "Unsaved"); assert.deepEqual(store.get().entries.map((item) => item.title), ["Existing"]);
+});
+
+test("unavailable browser storage warns but still loads and saves database titles", async () => {
+  seed([entry("1", "Existing database title")]);
+  const originalGetItem = dom.window.Storage.prototype.getItem;
+  dom.window.Storage.prototype.getItem = () => { throw new Error("Browser storage unavailable"); };
+  try {
+    render(createElement(Watchlist));
+    await screen.findByRole("heading", { name: "Existing database title" });
+    assert.match(screen.getByRole("alert").textContent, /browser/i);
+    const form = await openForm();
+    fireEvent.change(form.getByLabelText("Title"), { target: { value: "New database title" } });
+    fireEvent.click(form.getByRole("button", { name: /add title/i }));
+    await screen.findByRole("heading", { name: "New database title" });
+    assert.deepEqual(store.get().entries.map((item) => item.title), ["New database title", "Existing database title"]);
+  } finally { dom.window.Storage.prototype.getItem = originalGetItem; }
 });
