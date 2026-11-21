@@ -78,3 +78,13 @@ test("availability route rejects foreign-origin requests before any lookup", asy
   const response = await POST(new Request("http://127.0.0.1:3000/api/watchlist/availability", { method: "POST", headers: { "Content-Type": "application/json", Origin: "https://other.example" }, body: JSON.stringify({ title: "Film", kind: "Movie" }) }));
   assert.equal(response.status, 403);
 });
+
+test("uses the supplied TMDB ID directly and rejects mismatched details", async () => {
+  let requested;
+  const fetcher = async (url) => { requested = url; return Response.json({ tmdb_id: 430642, tmdb_type: "movie", poster: "https://image.tmdb.org/t/p/w342/poster.jpg", sources: [] }); };
+  const result = await findAvailability("Beaches", "Movie", { apiKey: "secret", tmdbId: 430642, fetcher });
+  assert.equal(requested.pathname, "/v1/title/movie-430642/details/");
+  assert.equal(result.cover.sourceUrl, "https://www.themoviedb.org/movie/430642");
+  const mismatch = await findAvailability("Beaches", "Movie", { apiKey: "secret", tmdbId: 430642, fetcher: async () => Response.json({ tmdb_id: 1, tmdb_type: "movie", sources: [] }) });
+  assert.equal(mismatch, null);
+});

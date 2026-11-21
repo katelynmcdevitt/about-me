@@ -2,13 +2,20 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { HttpError } from "../http";
+import { tmdbIdFromLink } from "./tmdb-link";
 
-type Entry = { id: string; title: string; kind: "Movie" | "TV show"; status: "Want to watch" | "Watching" | "Watched"; where: string; notes: string; label?: string; cover?: { url: string; sourceUrl: string } };
+type Entry = { id: string; title: string; kind: "Movie" | "TV show"; status: "Want to watch" | "Watching" | "Watched"; where: string; notes: string; label?: string; tmdbUrl?: string; cover?: { url: string; sourceUrl: string } };
 function validate(value: unknown): Entry {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new HttpError("Invalid title.");
   const e = value as Record<string, unknown>;
   if (typeof e.id !== "string" || !e.id.trim() || e.id.length > 200 || typeof e.title !== "string" || !e.title.trim() || e.title.length > 200 || !["Movie", "TV show"].includes(e.kind as string) || !["Want to watch", "Watching", "Watched"].includes(e.status as string) || typeof e.where !== "string" || e.where.length > 200 || typeof e.notes !== "string" || e.notes.length > 1000) throw new HttpError("Invalid title details.");
   if (e.label !== undefined && (typeof e.label !== "string" || e.label.length > 80)) throw new HttpError("Invalid label.");
+  let tmdbUrl: string | undefined;
+  if (e.tmdbUrl !== undefined && e.tmdbUrl !== "") {
+    const tmdbId = tmdbIdFromLink(e.tmdbUrl, String(e.kind));
+    if (!tmdbId) throw new HttpError("Enter a valid TMDB link for this title type.");
+    tmdbUrl = `https://www.themoviedb.org/${e.kind === "Movie" ? "movie" : "tv"}/${tmdbId}`;
+  }
   let cover: Entry["cover"];
   if (e.cover != null) {
     if (typeof e.cover !== "object" || Array.isArray(e.cover)) throw new HttpError("Invalid cover.");
@@ -21,7 +28,7 @@ function validate(value: unknown): Entry {
     } catch { throw new HttpError("Invalid cover address."); }
     cover = { url: c.url, sourceUrl: c.sourceUrl };
   }
-  return { id: e.id, title: e.title.trim(), kind: e.kind as Entry["kind"], status: e.status as Entry["status"], where: e.where.trim(), notes: e.notes.trim(), ...(typeof e.label === "string" && e.label.trim() ? { label: e.label.trim() } : {}), ...(cover ? { cover } : {}) };
+  return { id: e.id, title: e.title.trim(), kind: e.kind as Entry["kind"], status: e.status as Entry["status"], where: e.where.trim(), notes: e.notes.trim(), ...(typeof e.label === "string" && e.label.trim() ? { label: e.label.trim() } : {}), ...(tmdbUrl ? { tmdbUrl } : {}), ...(cover ? { cover } : {}) };
 }
 export class WatchlistStore {
   private db: DatabaseSync;

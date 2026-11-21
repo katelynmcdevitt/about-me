@@ -97,3 +97,15 @@ test("labels and TMDB cover metadata survive edits while invalid values leave th
     assert.deepEqual(store.get(), before);
   } finally { store.close(); }
 });
+
+test("stores only valid TMDB links matching the title type", () => {
+  const db = new WatchlistStore(":memory:");
+  try {
+    const added = db.apply({ action: "add", revision: 0, entry: { ...entry("1", "Beaches"), tmdbUrl: "https://www.themoviedb.org/movie/430642-beaches?tracking=ignored" } });
+    assert.equal(added.entries[0].tmdbUrl, "https://www.themoviedb.org/movie/430642");
+    for (const link of ["https://evil.example/movie/430642", "https://www.themoviedb.org/tv/430642", "http://www.themoviedb.org/movie/430642"]) {
+      assert.throws(() => db.apply({ action: "edit", revision: 1, entry: { ...added.entries[0], tmdbUrl: link } }), /valid TMDB link/);
+    }
+    assert.equal(db.get().revision, 1);
+  } finally { db.close(); }
+});

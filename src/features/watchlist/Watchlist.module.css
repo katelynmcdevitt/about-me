@@ -119,3 +119,5 @@
 .labelBadge { display: inline-block; padding: 4px 8px; border-radius: 4px; background: var(--site-mint-surface); color: var(--site-accent); font-size: 11px; font-weight: 700; }
 .cardActions { flex-wrap: wrap; gap: 10px; }
 .formFields { min-width: 0; margin: 0; padding: 0; border: 0; }
+.titleLink { color: inherit; text-decoration: underline; text-decoration-color: var(--site-border); text-underline-offset: 4px; }
+.titleLink:hover { color: var(--site-accent); text-decoration: underline; }

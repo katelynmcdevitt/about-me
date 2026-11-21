@@ -245,7 +245,7 @@ test("Watchmode artwork is session-only and does not replace a saved cover", asy
   assert.equal(saved.querySelector("img")?.getAttribute("src"), savedCover.url);
   const other = screen.getByRole("heading", { name: "Other show" }).closest("article");
   fireEvent.click(within(other).getByRole("button", { name: "Check streaming" }));
-  await waitFor(() => assert.equal(other.querySelector("img")?.getAttribute("src"), watchmodeCover.url));
+  await waitFor(() => assert.equal(other.querySelector("img")?.getAttribute("src"), watchmodeCover.url), { timeout: 4000 });
   assert.equal(store.get().entries.find((item) => item.id === "2").cover, undefined);
 });
 
@@ -286,4 +286,126 @@ test("sorting updates after a title edit without changing saved order", async ()
   await screen.findByRole("heading", { name: "Alpha" });
   assert.deepEqual(titles(), ["Alpha", "episode 2", "Episode 10"]);
   assert.deepEqual(store.get().entries.map((item) => item.id), savedOrder);
+});
+
+test("titles without artwork link to an IMDb title search", async () => {
+  seed([entry("1", "A Movie & More"), { ...entry("2", "A Show", "TV show"), cover: { url: "https://static.tvmaze.com/poster.jpg", sourceUrl: "https://www.tvmaze.com/shows/1" } }]);
+  render(createElement(Watchlist)); await screen.findByRole("heading", { name: /A Movie & More/ });
+  const link = screen.getByRole("link", { name: "Search IMDb for A Movie & More" });
+  const url = new URL(link.href);
+  assert.equal(url.origin, "https://www.imdb.com");
+  assert.equal(url.searchParams.get("q"), "A Movie & More");
+  assert.equal(url.searchParams.get("s"), "tt");
+  assert.equal(screen.queryByRole("link", { name: "Search IMDb for A Show" }), null);
+});
+
+test("a failed cover image also makes the title a searchable link", async () => {
+  seed([{ ...entry("1", "A Show", "TV show"), cover: { url: "https://static.tvmaze.com/poster.jpg", sourceUrl: "https://www.tvmaze.com/shows/1" } }]);
+  render(createElement(Watchlist)); await screen.findByRole("heading", { name: "A Show" });
+  fireEvent.error(document.querySelector("article img"));
+  assert.ok(screen.getByRole("link", { name: "Search IMDb for A Show" }));
+});
+
+test("automatically looks up missing artwork without replacing saved covers or writing results", async () => {
+  const savedCover = { url: "https://static.tvmaze.com/saved.jpg", sourceUrl: "https://www.tvmaze.com/shows/1" };
+  const onlineCover = { url: "https://image.tmdb.org/t/p/w500/poster.jpg", sourceUrl: "https://www.themoviedb.org/movie/15" };
+  seed([{ ...entry("1", "Has cover", "TV show"), cover: savedCover }, entry("2", "Needs cover")]);
+  watchmodeCover = onlineCover; availabilityResponse = "US · Stream: Service";
+  const apiFetch = globalThis.fetch; const titles = [];
+  globalThis.fetch = (url, options) => { if (String(url).startsWith("/api/watchlist/availability")) titles.push(JSON.parse(options.body).title); return apiFetch(url, options); };
+  render(createElement(Watchlist));
+  const heading = await screen.findByRole("heading", { name: "Needs cover" });
+  await waitFor(() => assert.equal(heading.closest("article").querySelector("img")?.getAttribute("src"), onlineCover.url), { timeout: 3000 });
+  assert.deepEqual(titles, ["Needs cover"]);
+  assert.equal(store.get().entries.find((item) => item.id === "2").cover, undefined);
+  assert.deepEqual(store.get().entries.find((item) => item.id === "1").cover, savedCover);
+});
+
+test("automatic lookup stops after a service error instead of consuming more credits", async () => {
+  seed([entry("1", "First"), entry("2", "Second")]);
+  const apiFetch = globalThis.fetch; let attempts = 0;
+  globalThis.fetch = (url, options) => {
+    if (String(url).startsWith("/api/watchlist/availability")) { attempts++; return Promise.resolve(Response.json({ error: "Unavailable" }, { status: 503 })); }
+    return apiFetch(url, options);
+  };
+  render(createElement(Watchlist));
+  await screen.findByText(/Automatic artwork lookup paused/i, {}, { timeout: 3000 });
+  assert.equal(attempts, 1);
+  assert.equal(screen.getAllByRole("button", { name: "Check streaming" }).length, 2);
+});
+
+test("automatically sends a saved TMDB title link for precise artwork matching", async () => {
+  seed([{ ...entry("1", "Beaches"), tmdbUrl: "https://www.themoviedb.org/movie/430642" }]);
+  const apiFetch = globalThis.fetch; let lookupBody;
+  watchmodeCover = { url: "https://image.tmdb.org/t/p/w500/beaches.jpg", sourceUrl: "https://www.themoviedb.org/movie/430642" };
+  globalThis.fetch = (url, options) => { if (String(url).startsWith("/api/watchlist/availability")) lookupBody = JSON.parse(options.body); return apiFetch(url, options); };
+  render(createElement(Watchlist));
+  const heading = await screen.findByRole("heading", { name: "Beaches" });
+  await waitFor(() => assert.equal(heading.closest("article").querySelector("img")?.getAttribute("src"), watchmodeCover.url), { timeout: 3000 });
+  assert.equal(lookupBody.tmdbUrl, "https://www.themoviedb.org/movie/430642");
+  assert.equal(store.get().entries[0].cover, undefined);
+  fireEvent.click(within(heading.closest("article")).getByRole("button", { name: /edit details/i }));
+  assert.equal(within(screen.getByRole("dialog")).getByLabelText(/TMDB title link/).value, "https://www.themoviedb.org/movie/430642");
+});
+
+test("automatic artwork request is aborted when the Watchlist unmounts", async () => {
+  seed([entry("1", "Needs artwork")]);
+  const apiFetch = globalThis.fetch;
+  let signal;
+  globalThis.fetch = (url, options) => {
+    if (String(url).startsWith("/api/watchlist/availability")) {
+      signal = options.signal;
+      return new Promise((resolve, reject) => signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true }));
+    }
+    return apiFetch(url, options);
+  };
+  const view = render(createElement(Watchlist));
+  await waitFor(() => assert.ok(signal), { timeout: 3000 });
+  assert.equal(signal.aborted, false);
+  view.unmount();
+  assert.equal(signal.aborted, true);
+  assert.equal(store.get().entries[0].cover, undefined);
+});
+
+test("new title lookup waits for the automatic queue and respects its pacing", async () => {
+  seed([entry("old", "Existing")]);
+  const apiFetch = globalThis.fetch; const calls = []; let finishAutomatic;
+  globalThis.fetch = (url, options) => {
+    if (String(url).startsWith("/api/watchlist/availability")) {
+      calls.push({ title: JSON.parse(options.body).title, time: Date.now() });
+      if (calls.length === 1) return new Promise((resolve) => { finishAutomatic = resolve; });
+      return Promise.resolve(Response.json({ where: null }));
+    }
+    return apiFetch(url, options);
+  };
+  render(createElement(Watchlist));
+  await waitFor(() => assert.equal(calls.length, 1), { timeout: 3000 });
+  const form = await openForm();
+  fireEvent.change(form.getByLabelText("Title"), { target: { value: "New title" } });
+  fireEvent.click(form.getByRole("button", { name: /add title/i }));
+  assert.equal(calls.length, 1);
+  const finishedAt = Date.now(); finishAutomatic(Response.json({ where: null }));
+  await waitFor(() => assert.equal(calls.length, 2), { timeout: 5000 });
+  assert.equal(calls[1].title, "New title");
+  assert.ok(calls[1].time - finishedAt >= 1900);
+  await screen.findByRole("heading", { name: "New title" });
+});
+
+test("manual streaming checks respect the automatic lookup cooldown", async () => {
+  seed([entry("old", "Existing")]);
+  const apiFetch = globalThis.fetch; const calls = [];
+  globalThis.fetch = (url, options) => {
+    if (String(url).startsWith("/api/watchlist/availability")) {
+      calls.push(Date.now());
+      return Promise.resolve(Response.json({ where: "US · Stream: Service" }));
+    }
+    return apiFetch(url, options);
+  };
+  render(createElement(Watchlist));
+  await screen.findByText(/Watchmode · US · Stream: Service/, {}, { timeout: 3000 });
+  const button = screen.getByRole("button", { name: "Check streaming" });
+  fireEvent.click(button);
+  assert.equal(calls.length, 1);
+  await waitFor(() => assert.equal(calls.length, 2), { timeout: 4000 });
+  assert.ok(calls[1] - calls[0] >= 1900);
 });
