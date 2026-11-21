@@ -3,22 +3,8 @@ const normalize = (value: string) => value.normalize("NFKC").toLowerCase().repla
 type Cover = { url: string; sourceUrl: string };
 
 // TVMaze provides series artwork; iTunes provides movie artwork and a store link.
-export async function findCover(title: string, kind: string, fetcher: typeof fetch = fetch, apiToken?: string): Promise<Cover | null> {
+export async function findCover(title: string, kind: string, fetcher: typeof fetch = fetch): Promise<Cover | null> {
   if (!title.trim() || title.length > 200 || !["Movie", "TV show"].includes(kind)) return null;
-  if (apiToken) {
-    try {
-      const type = kind === "Movie" ? "movie" : "tv";
-      const search = new URL(`https://api.themoviedb.org/3/search/${type}`);
-      search.searchParams.set("query", title.trim());
-      const response = await fetcher(search, { headers: { Authorization: `Bearer ${apiToken}`, Accept: "application/json" }, signal: AbortSignal.timeout(4000), cache: "no-store" });
-      if (response.ok) {
-        const data = await response.json();
-        const matches = Array.isArray(data?.results) ? data.results.filter((item: { id?: unknown; title?: unknown; name?: unknown; poster_path?: unknown }) => Number.isSafeInteger(item?.id) && Number(item.id) > 0 && typeof (type === "movie" ? item.title : item.name) === "string" && normalize((type === "movie" ? item.title : item.name) as string) === normalize(title)) : [];
-        if (matches.length > 1) return null;
-        if (matches.length === 1 && typeof matches[0].poster_path === "string" && /^\/[a-zA-Z0-9_-]+\.(jpg|png|webp)$/.test(matches[0].poster_path)) return { url: `https://image.tmdb.org/t/p/w500${matches[0].poster_path}`, sourceUrl: `https://www.themoviedb.org/${type}/${matches[0].id}` };
-      }
-    } catch { /* Fall back to existing sources. */ }
-  }
   try {
     const url = kind === "TV show" ? new URL("https://api.tvmaze.com/search/shows") : new URL("https://itunes.apple.com/search");
     if (kind === "TV show") url.searchParams.set("q", title);

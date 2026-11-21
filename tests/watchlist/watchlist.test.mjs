@@ -9,12 +9,12 @@ const { createElement } = await import("react");
 const { default: Watchlist } = await loadFile(new URL("../../src/features/watchlist/Watchlist.tsx", import.meta.url));
 const { WatchlistStore } = await loadFile(new URL("../../src/server/watchlist/store.ts", import.meta.url));
 const originalFetch = globalThis.fetch;
-let store, coverResponse, availabilityResponse, failSave;
+let store, coverResponse, availabilityResponse, watchmodeCover, failSave;
 const entry = (id, title, kind = "Movie", status = "Want to watch") => ({ id, title, kind, status, where: "", notes: "" });
 beforeEach(() => {
-  store = new WatchlistStore(":memory:"); coverResponse = null; availabilityResponse = null; failSave = false;
+  store = new WatchlistStore(":memory:"); coverResponse = null; availabilityResponse = null; watchmodeCover = undefined; failSave = false;
   globalThis.fetch = async (url, options = {}) => {
-    if (String(url).startsWith("/api/watchlist/availability")) return Response.json({ where: availabilityResponse });
+    if (String(url).startsWith("/api/watchlist/availability")) return Response.json({ where: availabilityResponse, ...(watchmodeCover ? { cover: watchmodeCover } : {}) });
     if (String(url).startsWith("/api/watchlist/cover")) {
       if (coverResponse instanceof Error) throw coverResponse;
       return Response.json({ cover: coverResponse });
@@ -104,21 +104,20 @@ test("unavailable browser storage warns but still loads and saves database title
   } finally { dom.window.Storage.prototype.getItem = originalGetItem; }
 });
 
-test("automatically saves found availability and lets existing titles refresh it", async () => {
-  availabilityResponse = "US · Stream: Example · JustWatch via TMDB";
-  render(createElement(Watchlist)); const form = await openForm();
+test("Watchmode availability stays in the session and is never stored in the database", async () => {
+  availabilityResponse = "US · Stream: Example";
+  const view = render(createElement(Watchlist)); const form = await openForm();
   fireEvent.change(form.getByLabelText("Title"), { target: { value: "A Movie" } });
   fireEvent.click(form.getByRole("button", { name: /add title/i }));
-  await screen.findByRole("heading", { name: "A Movie" });
-  assert.equal(store.get().entries[0].where, availabilityResponse);
-  availabilityResponse = "US · Rent: Another · JustWatch via TMDB";
-  fireEvent.click(screen.getByRole("button", { name: /edit details/i }));
-  const edit = within(screen.getByRole("dialog"));
-  fireEvent.click(edit.getByRole("button", { name: /find network or streamer/i }));
-  await waitFor(() => assert.equal(edit.getByLabelText(/Where to watch/).value, availabilityResponse));
-  assert.notEqual(store.get().entries[0].where, availabilityResponse);
-  fireEvent.click(edit.getByRole("button", { name: /save changes/i }));
-  await waitFor(() => assert.equal(store.get().entries[0].where, availabilityResponse));
+  await screen.findByText(/Watchmode · US · Stream: Example/);
+  assert.equal(store.get().entries[0].where, "");
+  assert.ok(!JSON.stringify(store.get()).includes("Example"));
+  view.unmount(); render(createElement(Watchlist)); await screen.findByRole("heading", { name: "A Movie" });
+  assert.equal(screen.queryByText(/Watchmode · US · Stream: Example/), null);
+  availabilityResponse = "US · Rent: Another";
+  fireEvent.click(screen.getByRole("button", { name: "Check streaming" }));
+  await screen.findByText(/Watchmode · US · Rent: Another/);
+  assert.ok(!JSON.stringify(store.get()).includes("Another"));
 });
 
 test("labels can be saved, searched and edited", async () => {
@@ -192,21 +191,13 @@ test("a manually supplied streaming location is preserved on a new title", async
   assert.equal(store.get().entries[0].where, "My choice");
 });
 
-test("network lookup protects the title, type and manual availability while pending", async () => {
-  seed([entry("one", "A Movie")]);
-  const apiFetch = globalThis.fetch; let complete;
-  globalThis.fetch = (url, options) => String(url).startsWith("/api/watchlist/availability") ? new Promise((resolve) => { complete = resolve; }) : apiFetch(url, options);
+test("Watchmode results do not overwrite manual viewing notes", async () => {
+  seed([{ ...entry("one", "A Movie"), where: "My choice" }]);
+  availabilityResponse = "US · Stream: Example";
   render(createElement(Watchlist)); await screen.findByRole("heading", { name: "A Movie" });
-  fireEvent.click(screen.getByRole("button", { name: /edit details/i }));
-  const edit = within(screen.getByRole("dialog"));
-  fireEvent.change(edit.getByLabelText(/Where to watch/), { target: { value: "My choice" } });
-  fireEvent.click(edit.getByRole("button", { name: /find network or streamer/i }));
-  assert.equal(edit.getByLabelText("Title").disabled, true);
-  assert.equal(edit.getByLabelText("Type").disabled, true);
-  assert.equal(edit.getByLabelText(/Where to watch/).disabled, true);
-  complete(Response.json({ where: "US · Stream: Example · JustWatch via TMDB" }));
-  await waitFor(() => assert.equal(edit.getByLabelText(/Where to watch/).disabled, false));
-  assert.equal(edit.getByLabelText(/Where to watch/).value, "US · Stream: Example · JustWatch via TMDB");
+  fireEvent.click(screen.getByRole("button", { name: "Check streaming" }));
+  await screen.findByText(/Watchmode · US · Stream: Example/);
+  assert.equal(store.get().entries[0].where, "My choice");
 });
 
 test("saving a title locks its draft until automatic lookups finish", async () => {
@@ -220,4 +211,50 @@ test("saving a title locks its draft until automatic lookups finish", async () =
   complete(Response.json({ cover: null }));
   await screen.findByRole("heading", { name: "A Movie" });
   assert.equal(store.get().entries[0].title, "A Movie");
+});
+
+test("TV and movie navigation filters combine with labels and update counts", async () => {
+  seed([{ ...entry("1", "Owen movie", "Movie"), label: "For Owen" }, entry("2", "Other movie", "Movie"), { ...entry("3", "Owen show", "TV show"), label: "For Owen" }]);
+  render(createElement(Watchlist)); await screen.findByRole("heading", { name: "Owen show" });
+  const nav = within(screen.getByRole("navigation", { name: "Browse by type" }));
+  const movies = nav.getByRole("button", { name: "Movies" });
+  const shows = nav.getByRole("button", { name: "TV shows" });
+  assert.match(movies.textContent, /2/); assert.match(shows.textContent, /1/);
+  fireEvent.click(screen.getByRole("button", { name: "For Owen" }));
+  fireEvent.click(movies);
+  assert.equal(movies.getAttribute("aria-pressed"), "true");
+  assert.ok(screen.getByRole("heading", { name: "Owen movie" }));
+  assert.ok(!screen.queryByRole("heading", { name: "Owen show" }));
+  assert.ok(!screen.queryByRole("heading", { name: "Other movie" }));
+  fireEvent.click(shows);
+  assert.ok(screen.getByRole("heading", { name: "Owen show" }));
+  assert.ok(!screen.queryByRole("heading", { name: "Owen movie" }));
+  fireEvent.click(shows);
+  assert.ok(screen.getByRole("heading", { name: "Owen movie" }));
+  assert.ok(screen.getByRole("heading", { name: "Owen show" }));
+});
+
+test("Watchmode artwork is session-only and does not replace a saved cover", async () => {
+  const savedCover = { url: "https://static.tvmaze.com/saved.jpg", sourceUrl: "https://www.tvmaze.com/shows/1" };
+  watchmodeCover = { url: "https://image.tmdb.org/t/p/w500/poster.jpg", sourceUrl: "https://www.themoviedb.org/tv/15" };
+  seed([{ ...entry("1", "A Show", "TV show"), cover: savedCover }, entry("2", "Other show", "TV show")]);
+  render(createElement(Watchlist)); await screen.findByRole("heading", { name: "A Show" });
+  const saved = screen.getByRole("heading", { name: "A Show" }).closest("article");
+  fireEvent.click(within(saved).getByRole("button", { name: "Check streaming" }));
+  await within(saved).findByText("No streaming options found on Watchmode.");
+  assert.equal(saved.querySelector("img")?.getAttribute("src"), savedCover.url);
+  const other = screen.getByRole("heading", { name: "Other show" }).closest("article");
+  fireEvent.click(within(other).getByRole("button", { name: "Check streaming" }));
+  await waitFor(() => assert.equal(other.querySelector("img")?.getAttribute("src"), watchmodeCover.url));
+  assert.equal(store.get().entries.find((item) => item.id === "2").cover, undefined);
+});
+
+test("Watchmode setup errors are shown without changing a saved title", async () => {
+  seed([{ ...entry("one", "A Movie"), where: "My note" }]);
+  const apiFetch = globalThis.fetch;
+  globalThis.fetch = (url, options) => String(url).startsWith("/api/watchlist/availability") ? Promise.resolve(Response.json({ error: "Add WATCHMODE_API_KEY to .env.local and restart the server to use Watchmode." }, { status: 503 })) : apiFetch(url, options);
+  render(createElement(Watchlist)); await screen.findByRole("heading", { name: "A Movie" });
+  fireEvent.click(screen.getByRole("button", { name: "Check streaming" }));
+  assert.match((await screen.findByRole("status")).textContent, /WATCHMODE_API_KEY/);
+  assert.equal(store.get().entries[0].where, "My note");
 });
