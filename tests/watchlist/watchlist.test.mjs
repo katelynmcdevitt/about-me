@@ -9,11 +9,12 @@ const { createElement } = await import("react");
 const { default: Watchlist } = await loadFile(new URL("../../src/features/watchlist/Watchlist.tsx", import.meta.url));
 const { WatchlistStore } = await loadFile(new URL("../../src/server/watchlist/store.ts", import.meta.url));
 const originalFetch = globalThis.fetch;
-let store, coverResponse, failSave;
+let store, coverResponse, availabilityResponse, failSave;
 const entry = (id, title, kind = "Movie", status = "Want to watch") => ({ id, title, kind, status, where: "", notes: "" });
 beforeEach(() => {
-  store = new WatchlistStore(":memory:"); coverResponse = null; failSave = false;
+  store = new WatchlistStore(":memory:"); coverResponse = null; availabilityResponse = null; failSave = false;
   globalThis.fetch = async (url, options = {}) => {
+    if (String(url).startsWith("/api/watchlist/availability")) return Response.json({ where: availabilityResponse });
     if (String(url).startsWith("/api/watchlist/cover")) {
       if (coverResponse instanceof Error) throw coverResponse;
       return Response.json({ cover: coverResponse });
@@ -101,4 +102,122 @@ test("unavailable browser storage warns but still loads and saves database title
     await screen.findByRole("heading", { name: "New database title" });
     assert.deepEqual(store.get().entries.map((item) => item.title), ["New database title", "Existing database title"]);
   } finally { dom.window.Storage.prototype.getItem = originalGetItem; }
+});
+
+test("automatically saves found availability and lets existing titles refresh it", async () => {
+  availabilityResponse = "US · Stream: Example · JustWatch via TMDB";
+  render(createElement(Watchlist)); const form = await openForm();
+  fireEvent.change(form.getByLabelText("Title"), { target: { value: "A Movie" } });
+  fireEvent.click(form.getByRole("button", { name: /add title/i }));
+  await screen.findByRole("heading", { name: "A Movie" });
+  assert.equal(store.get().entries[0].where, availabilityResponse);
+  availabilityResponse = "US · Rent: Another · JustWatch via TMDB";
+  fireEvent.click(screen.getByRole("button", { name: /edit details/i }));
+  const edit = within(screen.getByRole("dialog"));
+  fireEvent.click(edit.getByRole("button", { name: /find network or streamer/i }));
+  await waitFor(() => assert.equal(edit.getByLabelText(/Where to watch/).value, availabilityResponse));
+  assert.notEqual(store.get().entries[0].where, availabilityResponse);
+  fireEvent.click(edit.getByRole("button", { name: /save changes/i }));
+  await waitFor(() => assert.equal(store.get().entries[0].where, availabilityResponse));
+});
+
+test("labels can be saved, searched and edited", async () => {
+  render(createElement(Watchlist)); const form = await openForm();
+  fireEvent.change(form.getByLabelText("Title"), { target: { value: "A Movie" } });
+  fireEvent.change(form.getByLabelText(/Label/), { target: { value: "For Owen" } });
+  fireEvent.click(form.getByRole("button", { name: /add title/i }));
+  await screen.findByRole("heading", { name: "A Movie" });
+  assert.equal(store.get().entries[0].label, "For Owen");
+  fireEvent.change(screen.getByLabelText("Search titles"), { target: { value: "for owen" } });
+  assert.ok(within(screen.getByRole("article")).getByText("For Owen"));
+  fireEvent.click(screen.getByRole("button", { name: /edit details/i }));
+  const edit = within(screen.getByRole("dialog"));
+  assert.equal(edit.getByLabelText(/Label/).value, "For Owen");
+  fireEvent.change(edit.getByLabelText(/Label/), { target: { value: "Family" } });
+  fireEvent.click(edit.getByRole("button", { name: /save changes/i }));
+  await waitFor(() => assert.equal(store.get().entries[0].label, "Family"));
+});
+
+test("For Owen navigation filters labeled titles and updates its count", async () => {
+  seed([{ ...entry("1", "For Owen movie", "Movie", "Watched"), label: "For Owen" }, entry("2", "Other show", "TV show")]);
+  render(createElement(Watchlist)); await screen.findByRole("heading", { name: "For Owen movie" });
+  const nav = within(screen.getByRole("navigation", { name: "Filter by label" }));
+  const filter = nav.getByRole("button", { name: "For Owen" });
+  assert.match(filter.textContent, /1/); fireEvent.click(filter);
+  assert.equal(filter.getAttribute("aria-pressed"), "true");
+  assert.ok(screen.getByRole("heading", { name: "For Owen movie" }));
+  assert.ok(!screen.queryByRole("heading", { name: "Other show" }));
+  fireEvent.click(screen.getByRole("button", { name: /edit details/i }));
+  const edit = within(screen.getByRole("dialog"));
+  fireEvent.change(edit.getByLabelText(/Label/), { target: { value: "Family" } });
+  fireEvent.click(edit.getByRole("button", { name: /save changes/i }));
+  await waitFor(() => assert.match(filter.textContent, /0/));
+  assert.ok(!screen.queryByRole("heading", { name: "For Owen movie" }));
+});
+
+test("find artwork updates an existing title only after saving", async () => {
+  seed([entry("one", "A Movie")]);
+  coverResponse = { url: "https://image.tmdb.org/t/p/w500/poster.jpg", sourceUrl: "https://www.themoviedb.org/movie/42" };
+  render(createElement(Watchlist)); await screen.findByRole("heading", { name: "A Movie" });
+  fireEvent.click(screen.getByRole("button", { name: /edit details/i }));
+  const edit = within(screen.getByRole("dialog"));
+  fireEvent.click(edit.getByRole("button", { name: "Find artwork" }));
+  await edit.findByText("Artwork found. Save to keep it.");
+  assert.equal(store.get().entries[0].cover, undefined);
+  fireEvent.click(edit.getByRole("button", { name: /save changes/i }));
+  await waitFor(() => assert.deepEqual(store.get().entries[0].cover, coverResponse));
+  assert.ok(within(screen.getByRole("article")).getByRole("link", { name: /TMDB/ }));
+});
+
+test("shows without TVMaze artwork offer a title search link", async () => {
+  seed([entry("1", "A Show & More", "TV show"), entry("2", "A Movie", "Movie")]);
+  render(createElement(Watchlist));
+  const heading = await screen.findByRole("heading", { name: "A Show & More" });
+  const article = heading.closest("article"); assert.ok(article);
+  const link = within(article).getByRole("link", { name: /Search TVMaze/ });
+  const url = new URL(link.href);
+  assert.equal(url.origin, "https://www.tvmaze.com");
+  assert.equal(url.searchParams.get("q"), "A Show & More");
+  assert.equal(within(screen.getByRole("heading", { name: "A Movie" }).closest("article")).queryByRole("link", { name: /TVMaze/ }), null);
+});
+
+test("a manually supplied streaming location is preserved on a new title", async () => {
+  availabilityResponse = "US · Stream: Auto provider · JustWatch via TMDB";
+  render(createElement(Watchlist));
+  const form = await openForm();
+  fireEvent.change(form.getByLabelText("Title"), { target: { value: "A Movie" } });
+  fireEvent.change(form.getByLabelText(/Where to watch/), { target: { value: "My choice" } });
+  fireEvent.click(form.getByRole("button", { name: /add title/i }));
+  await screen.findByRole("heading", { name: "A Movie" });
+  assert.equal(store.get().entries[0].where, "My choice");
+});
+
+test("network lookup protects the title, type and manual availability while pending", async () => {
+  seed([entry("one", "A Movie")]);
+  const apiFetch = globalThis.fetch; let complete;
+  globalThis.fetch = (url, options) => String(url).startsWith("/api/watchlist/availability") ? new Promise((resolve) => { complete = resolve; }) : apiFetch(url, options);
+  render(createElement(Watchlist)); await screen.findByRole("heading", { name: "A Movie" });
+  fireEvent.click(screen.getByRole("button", { name: /edit details/i }));
+  const edit = within(screen.getByRole("dialog"));
+  fireEvent.change(edit.getByLabelText(/Where to watch/), { target: { value: "My choice" } });
+  fireEvent.click(edit.getByRole("button", { name: /find network or streamer/i }));
+  assert.equal(edit.getByLabelText("Title").disabled, true);
+  assert.equal(edit.getByLabelText("Type").disabled, true);
+  assert.equal(edit.getByLabelText(/Where to watch/).disabled, true);
+  complete(Response.json({ where: "US · Stream: Example · JustWatch via TMDB" }));
+  await waitFor(() => assert.equal(edit.getByLabelText(/Where to watch/).disabled, false));
+  assert.equal(edit.getByLabelText(/Where to watch/).value, "US · Stream: Example · JustWatch via TMDB");
+});
+
+test("saving a title locks its draft until automatic lookups finish", async () => {
+  const apiFetch = globalThis.fetch; let complete;
+  globalThis.fetch = (url, options) => String(url).startsWith("/api/watchlist/cover") ? new Promise((resolve) => { complete = resolve; }) : apiFetch(url, options);
+  render(createElement(Watchlist)); const form = await openForm();
+  fireEvent.change(form.getByLabelText("Title"), { target: { value: "A Movie" } });
+  fireEvent.click(form.getByRole("button", { name: /add title/i }));
+  assert.equal(form.getByLabelText("Title").closest("fieldset").disabled, true);
+  assert.equal(form.getByLabelText(/Notes/).closest("fieldset").disabled, true);
+  complete(Response.json({ cover: null }));
+  await screen.findByRole("heading", { name: "A Movie" });
+  assert.equal(store.get().entries[0].title, "A Movie");
 });

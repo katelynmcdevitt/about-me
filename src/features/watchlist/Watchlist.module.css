@@ -109,3 +109,13 @@
   .toolbar { flex-direction: row; }
   .controls { width: 100%; }
 }
+.credits { display: flex; align-items: center; gap: 14px; padding: 0 0 30px; color: var(--site-text-subtle); font-size: 11px; line-height: 1.5; }
+.credits img { display: block; width: 64px; height: auto; }
+.credits p { margin: 0; }
+.credits p a { color: var(--site-accent); text-decoration: underline; }
+.lookupButton { margin: -6px 0 15px; padding: 0; border: 0; background: transparent; color: var(--site-accent); font: 600 12px var(--site-font-sans); cursor: pointer; }
+.lookupButton:disabled { opacity: .6; cursor: wait; }
+.lookupMessage { margin: -6px 0 15px; color: var(--site-text-muted); font-size: 12px; }
+.labelBadge { display: inline-block; padding: 4px 8px; border-radius: 4px; background: var(--site-mint-surface); color: var(--site-accent); font-size: 11px; font-weight: 700; }
+.cardActions { flex-wrap: wrap; gap: 10px; }
+.formFields { min-width: 0; margin: 0; padding: 0; border: 0; }

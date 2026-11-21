@@ -380,7 +380,12 @@ When adding a currently reading book, Shelf Notes searches [Open Library](https:
 
 Visit `/apps/watchlist` to keep a personal list of movies and TV shows. Add and edit titles, where to watch them, notes, and their status; search or filter the collection as it grows. Entries are saved in a local SQLite database at `data/watchlist.sqlite`, so they persist across app restarts and are shared by browsers using this local server. They do not sync to other devices. Set `WATCHLIST_DATABASE_PATH` before starting the app to use a different database path.
 
-When adding a title, the watchlist looks for matching cover art through TVMaze (TV shows) or the iTunes Search API (movies). The title and type are sent to the relevant service, and artwork loads from that service when displayed. An internet connection is required; if no exact title match is found or the service is unavailable, the title is still saved with a placeholder. Existing titles are not searched automatically.
+When adding a title, the watchlist looks for matching cover art through TMDB when configured, falling back to TVMaze (TV shows) or the iTunes Search API (movies). The title and type are sent to the relevant service, and artwork loads from that service when displayed. An internet connection is required; if no exact title match is found or the service is unavailable, the title is still saved with a placeholder. Existing titles are not searched automatically; open **Edit details**, choose **Find artwork**, and save the result to refresh one.
+
+For new titles, the app also tries to find where to watch when the field is left blank. With no setup, TVMaze can report a show's original network or streaming channel; this is not necessarily its current availability. Current streaming, free, rental, and purchase options for movies and shows require a TMDB API Read Access Token: request one in your [TMDB account settings](https://developer.themoviedb.org/docs/getting-started), add `TMDB_READ_ACCESS_TOKEN=your_token_here` to the untracked `.env.local` file, and restart the server. Never add a real token to source control. Lookups default to the United States; optionally set `WATCHLIST_REGION` to a two-letter country code in `.env.local`. Streaming data is provided by JustWatch via TMDB. Availability varies by country and changes over time; saved results are snapshots.
+
+To refresh an existing title, open **Edit details**, select **Find network or streamer**, and save the result. You can also correct or enter the field manually. Existing manual text is not replaced automatically; a failed or ambiguous lookup does not prevent saving. Title searches send the title and type to these external services.
+
 
 ### Shared site styles
 

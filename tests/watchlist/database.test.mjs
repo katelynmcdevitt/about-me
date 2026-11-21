@@ -83,3 +83,17 @@ test("online backup captures committed WAL data and refuses to overwrite a backu
     assert.deepEqual(restored.get().entries.map((e) => e.id), ["1"]);
   } finally { restored?.close(); source.close(); rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("labels and TMDB cover metadata survive edits while invalid values leave the database unchanged", () => {
+  const store = new WatchlistStore(":memory:");
+  try {
+    const cover = { url: "https://image.tmdb.org/t/p/w500/poster.jpg", sourceUrl: "https://www.themoviedb.org/movie/42" };
+    store.apply({ action: "add", entry: { ...entry("1", "Movie"), label: "  For Owen  ", cover }, revision: 0 });
+    assert.equal(store.get().entries[0].label, "For Owen");
+    assert.deepEqual(store.get().entries[0].cover, cover);
+    const before = store.get();
+    assert.throws(() => store.apply({ action: "edit", entry: { ...before.entries[0], label: "x".repeat(81) }, revision: 1 }), /Invalid label/);
+    assert.throws(() => store.apply({ action: "edit", entry: { ...before.entries[0], cover: { ...cover, url: "https://image.tmdb.org.evil.example/poster.jpg" } }, revision: 1 }), /Invalid cover/);
+    assert.deepEqual(store.get(), before);
+  } finally { store.close(); }
+});
