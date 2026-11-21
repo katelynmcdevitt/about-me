@@ -258,3 +258,32 @@ test("Watchmode setup errors are shown without changing a saved title", async ()
   assert.match((await screen.findByRole("status")).textContent, /WATCHMODE_API_KEY/);
   assert.equal(store.get().entries[0].where, "My note");
 });
+
+test("titles appear alphabetically in the full list and filtered views", async () => {
+  seed([{ ...entry("1", "Zebra", "Movie"), label: "For Owen" }, entry("2", "beta", "TV show"), { ...entry("3", "Alpha", "Movie"), label: "For Owen" }]);
+  render(createElement(Watchlist)); await screen.findByRole("heading", { name: "Zebra" });
+  const titles = () => [...document.querySelectorAll("article h3")].map((heading) => heading.textContent);
+  assert.deepEqual(titles(), ["Alpha", "beta", "Zebra"]);
+  fireEvent.click(screen.getByRole("button", { name: "For Owen" }));
+  assert.deepEqual(titles(), ["Alpha", "Zebra"]);
+  fireEvent.click(screen.getByRole("button", { name: "TV shows" }));
+  assert.deepEqual(titles(), []);
+  fireEvent.click(screen.getByRole("button", { name: "All titles" }));
+  assert.deepEqual(titles(), ["beta"]);
+});
+
+test("sorting updates after a title edit without changing saved order", async () => {
+  seed([entry("1", "Episode 10"), entry("2", "episode 2"), entry("3", "Zebra")]);
+  const savedOrder = store.get().entries.map((item) => item.id);
+  render(createElement(Watchlist)); await screen.findByRole("heading", { name: "Zebra" });
+  const titles = () => [...document.querySelectorAll("article h3")].map((heading) => heading.textContent);
+  assert.deepEqual(titles(), ["episode 2", "Episode 10", "Zebra"]);
+  const card = screen.getByRole("heading", { name: "Zebra" }).closest("article");
+  fireEvent.click(within(card).getByRole("button", { name: /edit details/i }));
+  const form = within(screen.getByRole("dialog"));
+  fireEvent.change(form.getByLabelText("Title"), { target: { value: "Alpha" } });
+  fireEvent.click(form.getByRole("button", { name: /save changes/i }));
+  await screen.findByRole("heading", { name: "Alpha" });
+  assert.deepEqual(titles(), ["Alpha", "episode 2", "Episode 10"]);
+  assert.deepEqual(store.get().entries.map((item) => item.id), savedOrder);
+});

@@ -131,7 +131,9 @@ export default function Watchlist() {
     await commit({ action: "delete", id: entry.id });
     setSaving(false);
   }
-  const visible = useMemo(() => entries.filter((entry) => (filter === "All titles" || (filter === "For Owen" ? entry.label?.trim().toLowerCase() === "for owen" : entry.status === filter)) && (kind === "All" || entry.kind === kind) && `${entry.title} ${entry.where} ${entry.notes} ${entry.label ?? ""}`.toLowerCase().includes(query.toLowerCase().trim())), [entries, filter, kind, query]);
+  const visible = useMemo(() => entries
+    .filter((entry) => (filter === "All titles" || (filter === "For Owen" ? entry.label?.trim().toLowerCase() === "for owen" : entry.status === filter)) && (kind === "All" || entry.kind === kind) && `${entry.title} ${entry.where} ${entry.notes} ${entry.label ?? ""}`.toLowerCase().includes(query.toLowerCase().trim()))
+    .sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: "base", numeric: true })), [entries, filter, kind, query]);
   const count = (status: Status) => entries.filter((entry) => entry.status === status).length;
 
   return <div className={styles.page}>
