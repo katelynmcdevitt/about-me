@@ -171,7 +171,8 @@ export default function BookDetailsDialog({
           )}
         </div>
       )}
-      <form className="site-form"
+      <form
+        className="site-form"
         onSubmit={(event) => {
           void submit(event);
         }}

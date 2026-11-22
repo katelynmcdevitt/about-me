@@ -67,8 +67,16 @@ a:focus-visible {
   background: var(--site-accent-hover);
   border-color: var(--site-accent-hover);
 }
-.site-button.site-button.site-button:disabled { opacity: .55; cursor: not-allowed; }
-.site-form.site-form.site-form :is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, textarea) {
+.site-button.site-button.site-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.site-form.site-form.site-form
+  :is(
+    input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+    select,
+    textarea
+  ) {
   min-height: 40px;
   padding: 9px 10px;
   border: 1px solid var(--site-border);
@@ -77,7 +85,9 @@ a:focus-visible {
   background: var(--site-surface-raised);
   font: 14px var(--site-font-sans);
 }
-.site-form.site-form.site-form :is(input, textarea)::placeholder { color: var(--site-text-subtle); }
+.site-form.site-form.site-form :is(input, textarea)::placeholder {
+  color: var(--site-text-subtle);
+}
 :where(button, a, input, select, textarea, label[tabindex]):focus-visible {
   outline: 2px solid var(--site-accent);
   outline-offset: 3px;
@@ -99,4 +109,6 @@ a:focus-visible {
   font: 600 12px var(--site-font-sans);
   white-space: nowrap;
 }
-.site-back-link.site-back-link:hover { border-color: var(--site-accent); }
+.site-back-link.site-back-link:hover {
+  border-color: var(--site-accent);
+}

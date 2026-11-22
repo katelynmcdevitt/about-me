@@ -16,7 +16,9 @@ export default function AppsPage() {
       <div className={styles.grid}>
         <Link className={styles.card} href="/apps/watchlist">
           <span className={styles.eyebrow}>WATCHING</span>
-          <h2>The Watchlist <span aria-hidden="true">↗</span></h2>
+          <h2>
+            The Watchlist <span aria-hidden="true">↗</span>
+          </h2>
           <p>Keep movies and TV shows you want to watch in one place.</p>
         </Link>
         <Link className={styles.card} href="/apps/camp-schedule">

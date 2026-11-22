@@ -255,7 +255,9 @@ export default function CampPlanner() {
     return (
       <div className={styles.root}>
         <div className="camp-boot">
-          <Link href="/apps" className="site-back-link">← All apps</Link>
+          <Link href="/apps" className="site-back-link">
+            ← All apps
+          </Link>
           {selectionError ? (
             <div role="alert">
               {selectionError}

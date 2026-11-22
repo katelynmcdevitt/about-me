@@ -1,0 +1,9 @@
+# Generated files and local application data
+.next/
+dist/
+out/
+node_modules/
+/data/
+/backups/
+next-env.d.ts
+*.tsbuildinfo

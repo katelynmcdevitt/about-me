@@ -22,6 +22,10 @@ npm start
 
 `build` creates a production build in `.next/`; `start` serves it locally. None of these commands deploy the project. Keep `.openai/hosting.json` only as identification for the earlier hosted copy.
 
+Run `npm run format` to format supported project files with Prettier, or `npm run format:check` to check formatting without changing files. Generated files and local application data are excluded.
+
+Run `npm run hooks:install` once per clone to enable the pre-commit formatting check. It checks the staged snapshot and blocks the commit if formatting fails; run `npm run format` and stage the desired changes before retrying.
+
 ## Structure
 
 ```text
@@ -385,7 +389,6 @@ The Watchlist uses [Watchmode](https://api.watchmode.com/) for streaming availab
 The app checks Watchmode when adding a title and automatically checks existing titles without saved artwork when the list opens. Automatic checks run one at a time, are spaced apart, and stop if the service returns an error; each check uses API credits. Choose **Check streaming** on a card to retry or refresh it. If a name has multiple matches, add its exact TMDB movie or TV page link in **Edit details**; later Watchmode checks use that ID to find the right version. Watchmode results, including eligible posters, are kept only in memory in the current browser session and are not stored in the database. They expire after 24 hours and are cleared by the next cleanup timer or when the tab becomes visible; they also disappear on reload. This keeps them fresh and avoids persisting free-plan data. Saved viewing notes, labels, and artwork from other sources remain intact. No matching result, a missing key, or an unavailable service does not prevent saving. Watchmode does not license third-party images; the app only displays eligible TMDB-hosted posters and retains TMDB attribution. Existing artwork continues to use its original source.
 
 The separate **Find artwork** action looks for a unique matching TVMaze (shows) or iTunes (movies) cover and saves it with the title. Artwork may be unavailable, and an internet connection is required. The title and type are sent to the relevant service when looking up a title.
-
 
 ### Shared site styles
 

@@ -1,0 +1,9 @@
+#!/bin/sh
+# Check exactly the files in the index, including partially staged changes.
+set -eu
+root=$(git rev-parse --show-toplevel)
+snapshot=$(mktemp -d "${TMPDIR:-/tmp}/about-me-prettier.XXXXXXXX")
+trap 'rm -rf "$snapshot"' EXIT HUP INT TERM
+git checkout-index --all --prefix="$snapshot/"
+cd "$snapshot"
+"$root/node_modules/.bin/prettier" --check .

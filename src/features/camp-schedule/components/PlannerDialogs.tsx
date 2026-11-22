@@ -77,7 +77,8 @@ export default function PlannerDialogs({ p }: { p: PlannerState }) {
             </button>
           </>
         ) : (
-          <form className="site-form"
+          <form
+            className="site-form"
             onSubmit={(e) => {
               e.preventDefault();
               p.save();

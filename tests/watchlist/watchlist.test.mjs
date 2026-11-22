@@ -2,117 +2,256 @@ import test, { beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import { loadFile } from "../helpers/load-module.mjs";
-const dom = new JSDOM("<!doctype html><html><body></body></html>", { url: "http://localhost:3000" });
-Object.assign(globalThis, { window: dom.window, self: dom.window, document: dom.window.document, localStorage: dom.window.localStorage, HTMLElement: dom.window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true });
-const { render, fireEvent, screen, within, waitFor, cleanup } = await import("@testing-library/react");
+const dom = new JSDOM("<!doctype html><html><body></body></html>", {
+  url: "http://localhost:3000",
+});
+Object.assign(globalThis, {
+  window: dom.window,
+  self: dom.window,
+  document: dom.window.document,
+  localStorage: dom.window.localStorage,
+  HTMLElement: dom.window.HTMLElement,
+  IS_REACT_ACT_ENVIRONMENT: true,
+});
+const { render, fireEvent, screen, within, waitFor, cleanup } =
+  await import("@testing-library/react");
 const { createElement } = await import("react");
-const { default: Watchlist } = await loadFile(new URL("../../src/features/watchlist/Watchlist.tsx", import.meta.url));
-const { WatchlistStore } = await loadFile(new URL("../../src/server/watchlist/store.ts", import.meta.url));
+const { default: Watchlist } = await loadFile(
+  new URL("../../src/features/watchlist/Watchlist.tsx", import.meta.url),
+);
+const { WatchlistStore } = await loadFile(
+  new URL("../../src/server/watchlist/store.ts", import.meta.url),
+);
 const originalFetch = globalThis.fetch;
 let store, coverResponse, availabilityResponse, watchmodeCover, failSave;
-const entry = (id, title, kind = "Movie", status = "Want to watch") => ({ id, title, kind, status, where: "", notes: "" });
+const entry = (id, title, kind = "Movie", status = "Want to watch") => ({
+  id,
+  title,
+  kind,
+  status,
+  where: "",
+  notes: "",
+});
 beforeEach(() => {
-  store = new WatchlistStore(":memory:"); coverResponse = null; availabilityResponse = null; watchmodeCover = undefined; failSave = false;
+  store = new WatchlistStore(":memory:");
+  coverResponse = null;
+  availabilityResponse = null;
+  watchmodeCover = undefined;
+  failSave = false;
   globalThis.fetch = async (url, options = {}) => {
-    if (String(url).startsWith("/api/watchlist/availability")) return Response.json({ where: availabilityResponse, ...(watchmodeCover ? { cover: watchmodeCover } : {}) });
+    if (String(url).startsWith("/api/watchlist/availability"))
+      return Response.json({
+        where: availabilityResponse,
+        ...(watchmodeCover ? { cover: watchmodeCover } : {}),
+      });
     if (String(url).startsWith("/api/watchlist/cover")) {
       if (coverResponse instanceof Error) throw coverResponse;
       return Response.json({ cover: coverResponse });
     }
     if (String(url) === "/api/watchlist/library") {
       if (!options.method) return Response.json(store.get());
-      if (failSave) return Response.json({ error: "Your changes could not be saved. Please try again." }, { status: 500 });
-      try { return Response.json(store.apply(JSON.parse(options.body))); }
-      catch (error) { return Response.json({ error: error.message }, { status: error.status || 500 }); }
+      if (failSave)
+        return Response.json(
+          { error: "Your changes could not be saved. Please try again." },
+          { status: 500 },
+        );
+      try {
+        return Response.json(store.apply(JSON.parse(options.body)));
+      } catch (error) {
+        return Response.json(
+          { error: error.message },
+          { status: error.status || 500 },
+        );
+      }
     }
     throw Error(`Unexpected request: ${url}`);
   };
 });
-afterEach(() => { cleanup(); localStorage.clear(); store.close(); globalThis.fetch = originalFetch; });
-async function openForm() { await waitFor(() => assert.equal(screen.getByRole("button", { name: /add a title/i }).disabled, false)); fireEvent.click(screen.getByRole("button", { name: /add a title/i })); return within(screen.getByRole("dialog")); }
-function seed(entries) { let rev = store.get().revision; for (const item of entries) { store.apply({ action: "add", entry: item, revision: rev }); rev++; } }
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+  store.close();
+  globalThis.fetch = originalFetch;
+});
+async function openForm() {
+  await waitFor(() =>
+    assert.equal(
+      screen.getByRole("button", { name: /add a title/i }).disabled,
+      false,
+    ),
+  );
+  fireEvent.click(screen.getByRole("button", { name: /add a title/i }));
+  return within(screen.getByRole("dialog"));
+}
+function seed(entries) {
+  let rev = store.get().revision;
+  for (const item of entries) {
+    store.apply({ action: "add", entry: item, revision: rev });
+    rev++;
+  }
+}
 
 test("adding a title saves its cover and details to the database and survives reload", async () => {
-  coverResponse = { url: "https://static.tvmaze.com/poster.jpg", sourceUrl: "https://www.tvmaze.com/shows/1" };
-  const view = render(createElement(Watchlist)); const form = await openForm();
-  fireEvent.change(form.getByLabelText("Title"), { target: { value: "  A Show  " } });
-  fireEvent.change(form.getByLabelText("Type"), { target: { value: "TV show" } });
-  fireEvent.change(form.getByLabelText(/Where to watch/), { target: { value: " Streamer " } });
-  fireEvent.change(form.getByLabelText(/Notes/), { target: { value: " Recommended " } });
+  coverResponse = {
+    url: "https://static.tvmaze.com/poster.jpg",
+    sourceUrl: "https://www.tvmaze.com/shows/1",
+  };
+  const view = render(createElement(Watchlist));
+  const form = await openForm();
+  fireEvent.change(form.getByLabelText("Title"), {
+    target: { value: "  A Show  " },
+  });
+  fireEvent.change(form.getByLabelText("Type"), {
+    target: { value: "TV show" },
+  });
+  fireEvent.change(form.getByLabelText(/Where to watch/), {
+    target: { value: " Streamer " },
+  });
+  fireEvent.change(form.getByLabelText(/Notes/), {
+    target: { value: " Recommended " },
+  });
   fireEvent.click(form.getByRole("button", { name: /add title/i }));
   await screen.findByRole("heading", { name: "A Show" });
-  assert.equal(store.get().entries[0].where, "Streamer"); assert.equal(store.get().entries[0].notes, "Recommended");
+  assert.equal(store.get().entries[0].where, "Streamer");
+  assert.equal(store.get().entries[0].notes, "Recommended");
   assert.deepEqual(store.get().entries[0].cover, coverResponse);
-  view.unmount(); render(createElement(Watchlist)); assert.ok(await screen.findByRole("heading", { name: "A Show" }));
+  view.unmount();
+  render(createElement(Watchlist));
+  assert.ok(await screen.findByRole("heading", { name: "A Show" }));
 });
 
 test("existing browser titles migrate once without removing the browser copy", async () => {
-  const legacy = [entry("one", "Older show", "TV show")]; localStorage.setItem("watchlist-v1", JSON.stringify(legacy));
-  const view = render(createElement(Watchlist)); await screen.findByRole("heading", { name: "Older show" });
-  assert.equal(store.get().migrated, true); assert.deepEqual(JSON.parse(localStorage.getItem("watchlist-v1")), legacy);
+  const legacy = [entry("one", "Older show", "TV show")];
+  localStorage.setItem("watchlist-v1", JSON.stringify(legacy));
+  const view = render(createElement(Watchlist));
+  await screen.findByRole("heading", { name: "Older show" });
+  assert.equal(store.get().migrated, true);
+  assert.deepEqual(JSON.parse(localStorage.getItem("watchlist-v1")), legacy);
   store.apply({ action: "delete", id: "one", revision: store.get().revision });
-  view.unmount(); render(createElement(Watchlist)); await waitFor(() => assert.equal(screen.getByRole("button", { name: /add a title/i }).disabled, false));
+  view.unmount();
+  render(createElement(Watchlist));
+  await waitFor(() =>
+    assert.equal(
+      screen.getByRole("button", { name: /add a title/i }).disabled,
+      false,
+    ),
+  );
   assert.equal(screen.queryByRole("heading", { name: "Older show" }), null);
 });
 
 test("offline artwork lookup still saves a placeholder", async () => {
-  coverResponse = new Error("offline"); render(createElement(Watchlist)); const form = await openForm();
-  fireEvent.change(form.getByLabelText("Title"), { target: { value: "A Movie" } }); fireEvent.click(form.getByRole("button", { name: /add title/i }));
-  await screen.findByRole("heading", { name: "A Movie" }); assert.equal(store.get().entries[0].cover, undefined);
+  coverResponse = new Error("offline");
+  render(createElement(Watchlist));
+  const form = await openForm();
+  fireEvent.change(form.getByLabelText("Title"), {
+    target: { value: "A Movie" },
+  });
+  fireEvent.click(form.getByRole("button", { name: /add title/i }));
+  await screen.findByRole("heading", { name: "A Movie" });
+  assert.equal(store.get().entries[0].cover, undefined);
 });
 
 test("edit, filter, and delete update the database and sidebar counts", async () => {
-  seed([entry("1", "Arrival", "Movie", "Watched"), entry("2", "Severance", "TV show", "Watching"), entry("3", "The Bear", "TV show")]);
-  render(createElement(Watchlist)); await screen.findByRole("heading", { name: "Severance" });
-  const nav = within(screen.getByRole("navigation", { name: "Filter by status" }));
+  seed([
+    entry("1", "Arrival", "Movie", "Watched"),
+    entry("2", "Severance", "TV show", "Watching"),
+    entry("3", "The Bear", "TV show"),
+  ]);
+  render(createElement(Watchlist));
+  await screen.findByRole("heading", { name: "Severance" });
+  const nav = within(
+    screen.getByRole("navigation", { name: "Filter by status" }),
+  );
   fireEvent.click(nav.getByRole("button", { name: "Watching" }));
   assert.equal(screen.queryByRole("heading", { name: "Arrival" }), null);
-  fireEvent.click(screen.getByRole("button", { name: /edit details/i })); const form = within(screen.getByRole("dialog"));
-  fireEvent.change(form.getByLabelText("Status"), { target: { value: "Watched" } }); fireEvent.click(form.getByRole("button", { name: /save changes/i }));
-  await waitFor(() => assert.ok(!screen.queryByRole("heading", { name: "Severance" })));
+  fireEvent.click(screen.getByRole("button", { name: /edit details/i }));
+  const form = within(screen.getByRole("dialog"));
+  fireEvent.change(form.getByLabelText("Status"), {
+    target: { value: "Watched" },
+  });
+  fireEvent.click(form.getByRole("button", { name: /save changes/i }));
+  await waitFor(() =>
+    assert.ok(!screen.queryByRole("heading", { name: "Severance" })),
+  );
   assert.match(nav.getByRole("button", { name: "Watched" }).textContent, /2/);
   fireEvent.click(nav.getByRole("button", { name: "All titles" }));
-  fireEvent.change(screen.getByLabelText("Filter by type"), { target: { value: "TV show" } });
-  fireEvent.change(screen.getByLabelText("Search titles"), { target: { value: "BEAR" } });
+  fireEvent.change(screen.getByLabelText("Filter by type"), {
+    target: { value: "TV show" },
+  });
+  fireEvent.change(screen.getByLabelText("Search titles"), {
+    target: { value: "BEAR" },
+  });
   assert.ok(screen.getByRole("heading", { name: "The Bear" }));
-  dom.window.confirm = () => false; fireEvent.click(screen.getByRole("button", { name: "Remove" })); assert.equal(store.get().entries.length, 3);
-  dom.window.confirm = () => true; fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+  dom.window.confirm = () => false;
+  fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+  assert.equal(store.get().entries.length, 3);
+  dom.window.confirm = () => true;
+  fireEvent.click(screen.getByRole("button", { name: "Remove" }));
   await waitFor(() => assert.equal(store.get().entries.length, 2));
-  assert.equal(screen.getByRole("link", { name: /all apps/i }).getAttribute("href"), "/apps");
+  assert.equal(
+    screen.getByRole("link", { name: /all apps/i }).getAttribute("href"),
+    "/apps",
+  );
 });
 
 test("failed saves keep the draft and committed database unchanged", async () => {
-  seed([entry("1", "Existing")]); render(createElement(Watchlist)); const form = await openForm(); failSave = true;
-  fireEvent.change(form.getByLabelText("Title"), { target: { value: "Unsaved" } }); fireEvent.click(form.getByRole("button", { name: /add title/i }));
-  await waitFor(() => assert.match(screen.getByRole("alert").textContent, /could not be saved/i));
-  assert.equal(form.getByLabelText("Title").value, "Unsaved"); assert.deepEqual(store.get().entries.map((item) => item.title), ["Existing"]);
+  seed([entry("1", "Existing")]);
+  render(createElement(Watchlist));
+  const form = await openForm();
+  failSave = true;
+  fireEvent.change(form.getByLabelText("Title"), {
+    target: { value: "Unsaved" },
+  });
+  fireEvent.click(form.getByRole("button", { name: /add title/i }));
+  await waitFor(() =>
+    assert.match(screen.getByRole("alert").textContent, /could not be saved/i),
+  );
+  assert.equal(form.getByLabelText("Title").value, "Unsaved");
+  assert.deepEqual(
+    store.get().entries.map((item) => item.title),
+    ["Existing"],
+  );
 });
 
 test("unavailable browser storage warns but still loads and saves database titles", async () => {
   seed([entry("1", "Existing database title")]);
   const originalGetItem = dom.window.Storage.prototype.getItem;
-  dom.window.Storage.prototype.getItem = () => { throw new Error("Browser storage unavailable"); };
+  dom.window.Storage.prototype.getItem = () => {
+    throw new Error("Browser storage unavailable");
+  };
   try {
     render(createElement(Watchlist));
     await screen.findByRole("heading", { name: "Existing database title" });
     assert.match(screen.getByRole("alert").textContent, /browser/i);
     const form = await openForm();
-    fireEvent.change(form.getByLabelText("Title"), { target: { value: "New database title" } });
+    fireEvent.change(form.getByLabelText("Title"), {
+      target: { value: "New database title" },
+    });
     fireEvent.click(form.getByRole("button", { name: /add title/i }));
     await screen.findByRole("heading", { name: "New database title" });
-    assert.deepEqual(store.get().entries.map((item) => item.title), ["New database title", "Existing database title"]);
-  } finally { dom.window.Storage.prototype.getItem = originalGetItem; }
+    assert.deepEqual(
+      store.get().entries.map((item) => item.title),
+      ["New database title", "Existing database title"],
+    );
+  } finally {
+    dom.window.Storage.prototype.getItem = originalGetItem;
+  }
 });
 
 test("Watchmode availability stays in the session and is never stored in the database", async () => {
   availabilityResponse = "US · Stream: Example";
-  const view = render(createElement(Watchlist)); const form = await openForm();
-  fireEvent.change(form.getByLabelText("Title"), { target: { value: "A Movie" } });
+  const view = render(createElement(Watchlist));
+  const form = await openForm();
+  fireEvent.change(form.getByLabelText("Title"), {
+    target: { value: "A Movie" },
+  });
   fireEvent.click(form.getByRole("button", { name: /add title/i }));
   await screen.findByText(/Watchmode · US · Stream: Example/);
   assert.equal(store.get().entries[0].where, "");
   assert.ok(!JSON.stringify(store.get()).includes("Example"));
-  view.unmount(); render(createElement(Watchlist)); await screen.findByRole("heading", { name: "A Movie" });
+  view.unmount();
+  render(createElement(Watchlist));
+  await screen.findByRole("heading", { name: "A Movie" });
   assert.equal(screen.queryByText(/Watchmode · US · Stream: Example/), null);
   availabilityResponse = "US · Rent: Another";
   fireEvent.click(screen.getByRole("button", { name: "Check streaming" }));
@@ -121,34 +260,52 @@ test("Watchmode availability stays in the session and is never stored in the dat
 });
 
 test("labels can be saved, searched and edited", async () => {
-  render(createElement(Watchlist)); const form = await openForm();
-  fireEvent.change(form.getByLabelText("Title"), { target: { value: "A Movie" } });
-  fireEvent.change(form.getByLabelText(/Label/), { target: { value: "For Owen" } });
+  render(createElement(Watchlist));
+  const form = await openForm();
+  fireEvent.change(form.getByLabelText("Title"), {
+    target: { value: "A Movie" },
+  });
+  fireEvent.change(form.getByLabelText(/Label/), {
+    target: { value: "For Owen" },
+  });
   fireEvent.click(form.getByRole("button", { name: /add title/i }));
   await screen.findByRole("heading", { name: "A Movie" });
   assert.equal(store.get().entries[0].label, "For Owen");
-  fireEvent.change(screen.getByLabelText("Search titles"), { target: { value: "for owen" } });
+  fireEvent.change(screen.getByLabelText("Search titles"), {
+    target: { value: "for owen" },
+  });
   assert.ok(within(screen.getByRole("article")).getByText("For Owen"));
   fireEvent.click(screen.getByRole("button", { name: /edit details/i }));
   const edit = within(screen.getByRole("dialog"));
   assert.equal(edit.getByLabelText(/Label/).value, "For Owen");
-  fireEvent.change(edit.getByLabelText(/Label/), { target: { value: "Family" } });
+  fireEvent.change(edit.getByLabelText(/Label/), {
+    target: { value: "Family" },
+  });
   fireEvent.click(edit.getByRole("button", { name: /save changes/i }));
   await waitFor(() => assert.equal(store.get().entries[0].label, "Family"));
 });
 
 test("For Owen navigation filters labeled titles and updates its count", async () => {
-  seed([{ ...entry("1", "For Owen movie", "Movie", "Watched"), label: "For Owen" }, entry("2", "Other show", "TV show")]);
-  render(createElement(Watchlist)); await screen.findByRole("heading", { name: "For Owen movie" });
-  const nav = within(screen.getByRole("navigation", { name: "Filter by label" }));
+  seed([
+    { ...entry("1", "For Owen movie", "Movie", "Watched"), label: "For Owen" },
+    entry("2", "Other show", "TV show"),
+  ]);
+  render(createElement(Watchlist));
+  await screen.findByRole("heading", { name: "For Owen movie" });
+  const nav = within(
+    screen.getByRole("navigation", { name: "Filter by label" }),
+  );
   const filter = nav.getByRole("button", { name: "For Owen" });
-  assert.match(filter.textContent, /1/); fireEvent.click(filter);
+  assert.match(filter.textContent, /1/);
+  fireEvent.click(filter);
   assert.equal(filter.getAttribute("aria-pressed"), "true");
   assert.ok(screen.getByRole("heading", { name: "For Owen movie" }));
   assert.ok(!screen.queryByRole("heading", { name: "Other show" }));
   fireEvent.click(screen.getByRole("button", { name: /edit details/i }));
   const edit = within(screen.getByRole("dialog"));
-  fireEvent.change(edit.getByLabelText(/Label/), { target: { value: "Family" } });
+  fireEvent.change(edit.getByLabelText(/Label/), {
+    target: { value: "Family" },
+  });
   fireEvent.click(edit.getByRole("button", { name: /save changes/i }));
   await waitFor(() => assert.match(filter.textContent, /0/));
   assert.ok(!screen.queryByRole("heading", { name: "For Owen movie" }));
@@ -156,36 +313,57 @@ test("For Owen navigation filters labeled titles and updates its count", async (
 
 test("find artwork updates an existing title only after saving", async () => {
   seed([entry("one", "A Movie")]);
-  coverResponse = { url: "https://image.tmdb.org/t/p/w500/poster.jpg", sourceUrl: "https://www.themoviedb.org/movie/42" };
-  render(createElement(Watchlist)); await screen.findByRole("heading", { name: "A Movie" });
+  coverResponse = {
+    url: "https://image.tmdb.org/t/p/w500/poster.jpg",
+    sourceUrl: "https://www.themoviedb.org/movie/42",
+  };
+  render(createElement(Watchlist));
+  await screen.findByRole("heading", { name: "A Movie" });
   fireEvent.click(screen.getByRole("button", { name: /edit details/i }));
   const edit = within(screen.getByRole("dialog"));
   fireEvent.click(edit.getByRole("button", { name: "Find artwork" }));
   await edit.findByText("Artwork found. Save to keep it.");
   assert.equal(store.get().entries[0].cover, undefined);
   fireEvent.click(edit.getByRole("button", { name: /save changes/i }));
-  await waitFor(() => assert.deepEqual(store.get().entries[0].cover, coverResponse));
-  assert.ok(within(screen.getByRole("article")).getByRole("link", { name: /TMDB/ }));
+  await waitFor(() =>
+    assert.deepEqual(store.get().entries[0].cover, coverResponse),
+  );
+  assert.ok(
+    within(screen.getByRole("article")).getByRole("link", { name: /TMDB/ }),
+  );
 });
 
 test("shows without TVMaze artwork offer a title search link", async () => {
-  seed([entry("1", "A Show & More", "TV show"), entry("2", "A Movie", "Movie")]);
+  seed([
+    entry("1", "A Show & More", "TV show"),
+    entry("2", "A Movie", "Movie"),
+  ]);
   render(createElement(Watchlist));
   const heading = await screen.findByRole("heading", { name: "A Show & More" });
-  const article = heading.closest("article"); assert.ok(article);
+  const article = heading.closest("article");
+  assert.ok(article);
   const link = within(article).getByRole("link", { name: /Search TVMaze/ });
   const url = new URL(link.href);
   assert.equal(url.origin, "https://www.tvmaze.com");
   assert.equal(url.searchParams.get("q"), "A Show & More");
-  assert.equal(within(screen.getByRole("heading", { name: "A Movie" }).closest("article")).queryByRole("link", { name: /TVMaze/ }), null);
+  assert.equal(
+    within(
+      screen.getByRole("heading", { name: "A Movie" }).closest("article"),
+    ).queryByRole("link", { name: /TVMaze/ }),
+    null,
+  );
 });
 
 test("a manually supplied streaming location is preserved on a new title", async () => {
   availabilityResponse = "US · Stream: Auto provider · JustWatch via TMDB";
   render(createElement(Watchlist));
   const form = await openForm();
-  fireEvent.change(form.getByLabelText("Title"), { target: { value: "A Movie" } });
-  fireEvent.change(form.getByLabelText(/Where to watch/), { target: { value: "My choice" } });
+  fireEvent.change(form.getByLabelText("Title"), {
+    target: { value: "A Movie" },
+  });
+  fireEvent.change(form.getByLabelText(/Where to watch/), {
+    target: { value: "My choice" },
+  });
   fireEvent.click(form.getByRole("button", { name: /add title/i }));
   await screen.findByRole("heading", { name: "A Movie" });
   assert.equal(store.get().entries[0].where, "My choice");
@@ -194,17 +372,27 @@ test("a manually supplied streaming location is preserved on a new title", async
 test("Watchmode results do not overwrite manual viewing notes", async () => {
   seed([{ ...entry("one", "A Movie"), where: "My choice" }]);
   availabilityResponse = "US · Stream: Example";
-  render(createElement(Watchlist)); await screen.findByRole("heading", { name: "A Movie" });
+  render(createElement(Watchlist));
+  await screen.findByRole("heading", { name: "A Movie" });
   fireEvent.click(screen.getByRole("button", { name: "Check streaming" }));
   await screen.findByText(/Watchmode · US · Stream: Example/);
   assert.equal(store.get().entries[0].where, "My choice");
 });
 
 test("saving a title locks its draft until automatic lookups finish", async () => {
-  const apiFetch = globalThis.fetch; let complete;
-  globalThis.fetch = (url, options) => String(url).startsWith("/api/watchlist/cover") ? new Promise((resolve) => { complete = resolve; }) : apiFetch(url, options);
-  render(createElement(Watchlist)); const form = await openForm();
-  fireEvent.change(form.getByLabelText("Title"), { target: { value: "A Movie" } });
+  const apiFetch = globalThis.fetch;
+  let complete;
+  globalThis.fetch = (url, options) =>
+    String(url).startsWith("/api/watchlist/cover")
+      ? new Promise((resolve) => {
+          complete = resolve;
+        })
+      : apiFetch(url, options);
+  render(createElement(Watchlist));
+  const form = await openForm();
+  fireEvent.change(form.getByLabelText("Title"), {
+    target: { value: "A Movie" },
+  });
   fireEvent.click(form.getByRole("button", { name: /add title/i }));
   assert.equal(form.getByLabelText("Title").closest("fieldset").disabled, true);
   assert.equal(form.getByLabelText(/Notes/).closest("fieldset").disabled, true);
@@ -214,12 +402,20 @@ test("saving a title locks its draft until automatic lookups finish", async () =
 });
 
 test("TV and movie navigation filters combine with labels and update counts", async () => {
-  seed([{ ...entry("1", "Owen movie", "Movie"), label: "For Owen" }, entry("2", "Other movie", "Movie"), { ...entry("3", "Owen show", "TV show"), label: "For Owen" }]);
-  render(createElement(Watchlist)); await screen.findByRole("heading", { name: "Owen show" });
-  const nav = within(screen.getByRole("navigation", { name: "Browse by type" }));
+  seed([
+    { ...entry("1", "Owen movie", "Movie"), label: "For Owen" },
+    entry("2", "Other movie", "Movie"),
+    { ...entry("3", "Owen show", "TV show"), label: "For Owen" },
+  ]);
+  render(createElement(Watchlist));
+  await screen.findByRole("heading", { name: "Owen show" });
+  const nav = within(
+    screen.getByRole("navigation", { name: "Browse by type" }),
+  );
   const movies = nav.getByRole("button", { name: "Movies" });
   const shows = nav.getByRole("button", { name: "TV shows" });
-  assert.match(movies.textContent, /2/); assert.match(shows.textContent, /1/);
+  assert.match(movies.textContent, /2/);
+  assert.match(shows.textContent, /1/);
   fireEvent.click(screen.getByRole("button", { name: "For Owen" }));
   fireEvent.click(movies);
   assert.equal(movies.getAttribute("aria-pressed"), "true");
@@ -235,34 +431,85 @@ test("TV and movie navigation filters combine with labels and update counts", as
 });
 
 test("Watchmode artwork is session-only and does not replace a saved cover", async () => {
-  const savedCover = { url: "https://static.tvmaze.com/saved.jpg", sourceUrl: "https://www.tvmaze.com/shows/1" };
-  watchmodeCover = { url: "https://image.tmdb.org/t/p/w500/poster.jpg", sourceUrl: "https://www.themoviedb.org/tv/15" };
-  seed([{ ...entry("1", "A Show", "TV show"), cover: savedCover }, entry("2", "Other show", "TV show")]);
-  render(createElement(Watchlist)); await screen.findByRole("heading", { name: "A Show" });
-  const saved = screen.getByRole("heading", { name: "A Show" }).closest("article");
-  fireEvent.click(within(saved).getByRole("button", { name: "Check streaming" }));
+  const savedCover = {
+    url: "https://static.tvmaze.com/saved.jpg",
+    sourceUrl: "https://www.tvmaze.com/shows/1",
+  };
+  watchmodeCover = {
+    url: "https://image.tmdb.org/t/p/w500/poster.jpg",
+    sourceUrl: "https://www.themoviedb.org/tv/15",
+  };
+  seed([
+    { ...entry("1", "A Show", "TV show"), cover: savedCover },
+    entry("2", "Other show", "TV show"),
+  ]);
+  render(createElement(Watchlist));
+  await screen.findByRole("heading", { name: "A Show" });
+  const saved = screen
+    .getByRole("heading", { name: "A Show" })
+    .closest("article");
+  fireEvent.click(
+    within(saved).getByRole("button", { name: "Check streaming" }),
+  );
   await within(saved).findByText("No streaming options found on Watchmode.");
   assert.equal(saved.querySelector("img")?.getAttribute("src"), savedCover.url);
-  const other = screen.getByRole("heading", { name: "Other show" }).closest("article");
-  fireEvent.click(within(other).getByRole("button", { name: "Check streaming" }));
-  await waitFor(() => assert.equal(other.querySelector("img")?.getAttribute("src"), watchmodeCover.url), { timeout: 4000 });
-  assert.equal(store.get().entries.find((item) => item.id === "2").cover, undefined);
+  const other = screen
+    .getByRole("heading", { name: "Other show" })
+    .closest("article");
+  fireEvent.click(
+    within(other).getByRole("button", { name: "Check streaming" }),
+  );
+  await waitFor(
+    () =>
+      assert.equal(
+        other.querySelector("img")?.getAttribute("src"),
+        watchmodeCover.url,
+      ),
+    { timeout: 4000 },
+  );
+  assert.equal(
+    store.get().entries.find((item) => item.id === "2").cover,
+    undefined,
+  );
 });
 
 test("Watchmode setup errors are shown without changing a saved title", async () => {
   seed([{ ...entry("one", "A Movie"), where: "My note" }]);
   const apiFetch = globalThis.fetch;
-  globalThis.fetch = (url, options) => String(url).startsWith("/api/watchlist/availability") ? Promise.resolve(Response.json({ error: "Add WATCHMODE_API_KEY to .env.local and restart the server to use Watchmode." }, { status: 503 })) : apiFetch(url, options);
-  render(createElement(Watchlist)); await screen.findByRole("heading", { name: "A Movie" });
+  globalThis.fetch = (url, options) =>
+    String(url).startsWith("/api/watchlist/availability")
+      ? Promise.resolve(
+          Response.json(
+            {
+              error:
+                "Add WATCHMODE_API_KEY to .env.local and restart the server to use Watchmode.",
+            },
+            { status: 503 },
+          ),
+        )
+      : apiFetch(url, options);
+  render(createElement(Watchlist));
+  await screen.findByRole("heading", { name: "A Movie" });
   fireEvent.click(screen.getByRole("button", { name: "Check streaming" }));
-  assert.match((await screen.findByRole("status")).textContent, /WATCHMODE_API_KEY/);
+  assert.match(
+    (await screen.findByRole("status")).textContent,
+    /WATCHMODE_API_KEY/,
+  );
   assert.equal(store.get().entries[0].where, "My note");
 });
 
 test("titles appear alphabetically in the full list and filtered views", async () => {
-  seed([{ ...entry("1", "Zebra", "Movie"), label: "For Owen" }, entry("2", "beta", "TV show"), { ...entry("3", "Alpha", "Movie"), label: "For Owen" }]);
-  render(createElement(Watchlist)); await screen.findByRole("heading", { name: "Zebra" });
-  const titles = () => [...document.querySelectorAll("article h3")].map((heading) => heading.textContent);
+  seed([
+    { ...entry("1", "Zebra", "Movie"), label: "For Owen" },
+    entry("2", "beta", "TV show"),
+    { ...entry("3", "Alpha", "Movie"), label: "For Owen" },
+  ]);
+  render(createElement(Watchlist));
+  await screen.findByRole("heading", { name: "Zebra" });
+  const titles = () =>
+    [...document.querySelectorAll("article h3")].map(
+      (heading) => heading.textContent,
+    );
   assert.deepEqual(titles(), ["Alpha", "beta", "Zebra"]);
   fireEvent.click(screen.getByRole("button", { name: "For Owen" }));
   assert.deepEqual(titles(), ["Alpha", "Zebra"]);
@@ -273,79 +520,186 @@ test("titles appear alphabetically in the full list and filtered views", async (
 });
 
 test("sorting updates after a title edit without changing saved order", async () => {
-  seed([entry("1", "Episode 10"), entry("2", "episode 2"), entry("3", "Zebra")]);
+  seed([
+    entry("1", "Episode 10"),
+    entry("2", "episode 2"),
+    entry("3", "Zebra"),
+  ]);
   const savedOrder = store.get().entries.map((item) => item.id);
-  render(createElement(Watchlist)); await screen.findByRole("heading", { name: "Zebra" });
-  const titles = () => [...document.querySelectorAll("article h3")].map((heading) => heading.textContent);
+  render(createElement(Watchlist));
+  await screen.findByRole("heading", { name: "Zebra" });
+  const titles = () =>
+    [...document.querySelectorAll("article h3")].map(
+      (heading) => heading.textContent,
+    );
   assert.deepEqual(titles(), ["episode 2", "Episode 10", "Zebra"]);
-  const card = screen.getByRole("heading", { name: "Zebra" }).closest("article");
+  const card = screen
+    .getByRole("heading", { name: "Zebra" })
+    .closest("article");
   fireEvent.click(within(card).getByRole("button", { name: /edit details/i }));
   const form = within(screen.getByRole("dialog"));
-  fireEvent.change(form.getByLabelText("Title"), { target: { value: "Alpha" } });
+  fireEvent.change(form.getByLabelText("Title"), {
+    target: { value: "Alpha" },
+  });
   fireEvent.click(form.getByRole("button", { name: /save changes/i }));
   await screen.findByRole("heading", { name: "Alpha" });
   assert.deepEqual(titles(), ["Alpha", "episode 2", "Episode 10"]);
-  assert.deepEqual(store.get().entries.map((item) => item.id), savedOrder);
+  assert.deepEqual(
+    store.get().entries.map((item) => item.id),
+    savedOrder,
+  );
 });
 
 test("titles without artwork link to an IMDb title search", async () => {
-  seed([entry("1", "A Movie & More"), { ...entry("2", "A Show", "TV show"), cover: { url: "https://static.tvmaze.com/poster.jpg", sourceUrl: "https://www.tvmaze.com/shows/1" } }]);
-  render(createElement(Watchlist)); await screen.findByRole("heading", { name: /A Movie & More/ });
-  const link = screen.getByRole("link", { name: "Search IMDb for A Movie & More" });
+  seed([
+    entry("1", "A Movie & More"),
+    {
+      ...entry("2", "A Show", "TV show"),
+      cover: {
+        url: "https://static.tvmaze.com/poster.jpg",
+        sourceUrl: "https://www.tvmaze.com/shows/1",
+      },
+    },
+  ]);
+  render(createElement(Watchlist));
+  await screen.findByRole("heading", { name: /A Movie & More/ });
+  const link = screen.getByRole("link", {
+    name: "Search IMDb for A Movie & More",
+  });
   const url = new URL(link.href);
   assert.equal(url.origin, "https://www.imdb.com");
   assert.equal(url.searchParams.get("q"), "A Movie & More");
   assert.equal(url.searchParams.get("s"), "tt");
-  assert.equal(screen.queryByRole("link", { name: "Search IMDb for A Show" }), null);
+  assert.equal(
+    screen.queryByRole("link", { name: "Search IMDb for A Show" }),
+    null,
+  );
 });
 
 test("a failed cover image also makes the title a searchable link", async () => {
-  seed([{ ...entry("1", "A Show", "TV show"), cover: { url: "https://static.tvmaze.com/poster.jpg", sourceUrl: "https://www.tvmaze.com/shows/1" } }]);
-  render(createElement(Watchlist)); await screen.findByRole("heading", { name: "A Show" });
+  seed([
+    {
+      ...entry("1", "A Show", "TV show"),
+      cover: {
+        url: "https://static.tvmaze.com/poster.jpg",
+        sourceUrl: "https://www.tvmaze.com/shows/1",
+      },
+    },
+  ]);
+  render(createElement(Watchlist));
+  await screen.findByRole("heading", { name: "A Show" });
   fireEvent.error(document.querySelector("article img"));
   assert.ok(screen.getByRole("link", { name: "Search IMDb for A Show" }));
 });
 
 test("automatically looks up missing artwork without replacing saved covers or writing results", async () => {
-  const savedCover = { url: "https://static.tvmaze.com/saved.jpg", sourceUrl: "https://www.tvmaze.com/shows/1" };
-  const onlineCover = { url: "https://image.tmdb.org/t/p/w500/poster.jpg", sourceUrl: "https://www.themoviedb.org/movie/15" };
-  seed([{ ...entry("1", "Has cover", "TV show"), cover: savedCover }, entry("2", "Needs cover")]);
-  watchmodeCover = onlineCover; availabilityResponse = "US · Stream: Service";
-  const apiFetch = globalThis.fetch; const titles = [];
-  globalThis.fetch = (url, options) => { if (String(url).startsWith("/api/watchlist/availability")) titles.push(JSON.parse(options.body).title); return apiFetch(url, options); };
+  const savedCover = {
+    url: "https://static.tvmaze.com/saved.jpg",
+    sourceUrl: "https://www.tvmaze.com/shows/1",
+  };
+  const onlineCover = {
+    url: "https://image.tmdb.org/t/p/w500/poster.jpg",
+    sourceUrl: "https://www.themoviedb.org/movie/15",
+  };
+  seed([
+    { ...entry("1", "Has cover", "TV show"), cover: savedCover },
+    entry("2", "Needs cover"),
+  ]);
+  watchmodeCover = onlineCover;
+  availabilityResponse = "US · Stream: Service";
+  const apiFetch = globalThis.fetch;
+  const titles = [];
+  globalThis.fetch = (url, options) => {
+    if (String(url).startsWith("/api/watchlist/availability"))
+      titles.push(JSON.parse(options.body).title);
+    return apiFetch(url, options);
+  };
   render(createElement(Watchlist));
   const heading = await screen.findByRole("heading", { name: "Needs cover" });
-  await waitFor(() => assert.equal(heading.closest("article").querySelector("img")?.getAttribute("src"), onlineCover.url), { timeout: 3000 });
+  await waitFor(
+    () =>
+      assert.equal(
+        heading.closest("article").querySelector("img")?.getAttribute("src"),
+        onlineCover.url,
+      ),
+    { timeout: 3000 },
+  );
   assert.deepEqual(titles, ["Needs cover"]);
-  assert.equal(store.get().entries.find((item) => item.id === "2").cover, undefined);
-  assert.deepEqual(store.get().entries.find((item) => item.id === "1").cover, savedCover);
+  assert.equal(
+    store.get().entries.find((item) => item.id === "2").cover,
+    undefined,
+  );
+  assert.deepEqual(
+    store.get().entries.find((item) => item.id === "1").cover,
+    savedCover,
+  );
 });
 
 test("automatic lookup stops after a service error instead of consuming more credits", async () => {
   seed([entry("1", "First"), entry("2", "Second")]);
-  const apiFetch = globalThis.fetch; let attempts = 0;
+  const apiFetch = globalThis.fetch;
+  let attempts = 0;
   globalThis.fetch = (url, options) => {
-    if (String(url).startsWith("/api/watchlist/availability")) { attempts++; return Promise.resolve(Response.json({ error: "Unavailable" }, { status: 503 })); }
+    if (String(url).startsWith("/api/watchlist/availability")) {
+      attempts++;
+      return Promise.resolve(
+        Response.json({ error: "Unavailable" }, { status: 503 }),
+      );
+    }
     return apiFetch(url, options);
   };
   render(createElement(Watchlist));
-  await screen.findByText(/Automatic artwork lookup paused/i, {}, { timeout: 3000 });
+  await screen.findByText(
+    /Automatic artwork lookup paused/i,
+    {},
+    { timeout: 3000 },
+  );
   assert.equal(attempts, 1);
-  assert.equal(screen.getAllByRole("button", { name: "Check streaming" }).length, 2);
+  assert.equal(
+    screen.getAllByRole("button", { name: "Check streaming" }).length,
+    2,
+  );
 });
 
 test("automatically sends a saved TMDB title link for precise artwork matching", async () => {
-  seed([{ ...entry("1", "Beaches"), tmdbUrl: "https://www.themoviedb.org/movie/430642" }]);
-  const apiFetch = globalThis.fetch; let lookupBody;
-  watchmodeCover = { url: "https://image.tmdb.org/t/p/w500/beaches.jpg", sourceUrl: "https://www.themoviedb.org/movie/430642" };
-  globalThis.fetch = (url, options) => { if (String(url).startsWith("/api/watchlist/availability")) lookupBody = JSON.parse(options.body); return apiFetch(url, options); };
+  seed([
+    {
+      ...entry("1", "Beaches"),
+      tmdbUrl: "https://www.themoviedb.org/movie/430642",
+    },
+  ]);
+  const apiFetch = globalThis.fetch;
+  let lookupBody;
+  watchmodeCover = {
+    url: "https://image.tmdb.org/t/p/w500/beaches.jpg",
+    sourceUrl: "https://www.themoviedb.org/movie/430642",
+  };
+  globalThis.fetch = (url, options) => {
+    if (String(url).startsWith("/api/watchlist/availability"))
+      lookupBody = JSON.parse(options.body);
+    return apiFetch(url, options);
+  };
   render(createElement(Watchlist));
   const heading = await screen.findByRole("heading", { name: "Beaches" });
-  await waitFor(() => assert.equal(heading.closest("article").querySelector("img")?.getAttribute("src"), watchmodeCover.url), { timeout: 3000 });
+  await waitFor(
+    () =>
+      assert.equal(
+        heading.closest("article").querySelector("img")?.getAttribute("src"),
+        watchmodeCover.url,
+      ),
+    { timeout: 3000 },
+  );
   assert.equal(lookupBody.tmdbUrl, "https://www.themoviedb.org/movie/430642");
   assert.equal(store.get().entries[0].cover, undefined);
-  fireEvent.click(within(heading.closest("article")).getByRole("button", { name: /edit details/i }));
-  assert.equal(within(screen.getByRole("dialog")).getByLabelText(/TMDB title link/).value, "https://www.themoviedb.org/movie/430642");
+  fireEvent.click(
+    within(heading.closest("article")).getByRole("button", {
+      name: /edit details/i,
+    }),
+  );
+  assert.equal(
+    within(screen.getByRole("dialog")).getByLabelText(/TMDB title link/).value,
+    "https://www.themoviedb.org/movie/430642",
+  );
 });
 
 test("automatic artwork request is aborted when the Watchlist unmounts", async () => {
@@ -355,7 +709,11 @@ test("automatic artwork request is aborted when the Watchlist unmounts", async (
   globalThis.fetch = (url, options) => {
     if (String(url).startsWith("/api/watchlist/availability")) {
       signal = options.signal;
-      return new Promise((resolve, reject) => signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true }));
+      return new Promise((resolve, reject) =>
+        signal.addEventListener("abort", () => reject(new Error("aborted")), {
+          once: true,
+        }),
+      );
     }
     return apiFetch(url, options);
   };
@@ -369,11 +727,16 @@ test("automatic artwork request is aborted when the Watchlist unmounts", async (
 
 test("new title lookup waits for the automatic queue and respects its pacing", async () => {
   seed([entry("old", "Existing")]);
-  const apiFetch = globalThis.fetch; const calls = []; let finishAutomatic;
+  const apiFetch = globalThis.fetch;
+  const calls = [];
+  let finishAutomatic;
   globalThis.fetch = (url, options) => {
     if (String(url).startsWith("/api/watchlist/availability")) {
       calls.push({ title: JSON.parse(options.body).title, time: Date.now() });
-      if (calls.length === 1) return new Promise((resolve) => { finishAutomatic = resolve; });
+      if (calls.length === 1)
+        return new Promise((resolve) => {
+          finishAutomatic = resolve;
+        });
       return Promise.resolve(Response.json({ where: null }));
     }
     return apiFetch(url, options);
@@ -381,10 +744,13 @@ test("new title lookup waits for the automatic queue and respects its pacing", a
   render(createElement(Watchlist));
   await waitFor(() => assert.equal(calls.length, 1), { timeout: 3000 });
   const form = await openForm();
-  fireEvent.change(form.getByLabelText("Title"), { target: { value: "New title" } });
+  fireEvent.change(form.getByLabelText("Title"), {
+    target: { value: "New title" },
+  });
   fireEvent.click(form.getByRole("button", { name: /add title/i }));
   assert.equal(calls.length, 1);
-  const finishedAt = Date.now(); finishAutomatic(Response.json({ where: null }));
+  const finishedAt = Date.now();
+  finishAutomatic(Response.json({ where: null }));
   await waitFor(() => assert.equal(calls.length, 2), { timeout: 5000 });
   assert.equal(calls[1].title, "New title");
   assert.ok(calls[1].time - finishedAt >= 1900);
@@ -393,7 +759,8 @@ test("new title lookup waits for the automatic queue and respects its pacing", a
 
 test("manual streaming checks respect the automatic lookup cooldown", async () => {
   seed([entry("old", "Existing")]);
-  const apiFetch = globalThis.fetch; const calls = [];
+  const apiFetch = globalThis.fetch;
+  const calls = [];
   globalThis.fetch = (url, options) => {
     if (String(url).startsWith("/api/watchlist/availability")) {
       calls.push(Date.now());
@@ -402,7 +769,11 @@ test("manual streaming checks respect the automatic lookup cooldown", async () =
     return apiFetch(url, options);
   };
   render(createElement(Watchlist));
-  await screen.findByText(/Watchmode · US · Stream: Service/, {}, { timeout: 3000 });
+  await screen.findByText(
+    /Watchmode · US · Stream: Service/,
+    {},
+    { timeout: 3000 },
+  );
   const button = screen.getByRole("button", { name: "Check streaming" });
   fireEvent.click(button);
   assert.equal(calls.length, 1);

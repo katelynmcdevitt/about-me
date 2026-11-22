@@ -46,7 +46,8 @@ export default function AddReadingDialog({
           {error}
         </div>
       )}
-      <form className="site-form"
+      <form
+        className="site-form"
         onSubmit={(event) => {
           event.preventDefault();
           void onSave({ title, author, format }).then((saved) => {
