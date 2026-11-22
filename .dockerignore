@@ -1,0 +1,14 @@
+.git
+.githooks
+.next
+node_modules
+dist
+out
+data
+backups
+.env*
+*.sqlite
+*.sqlite-*
+*.tsbuildinfo
+.DS_Store
+.openai

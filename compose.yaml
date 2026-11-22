@@ -1,0 +1,15 @@
+services:
+  app:
+    build: .
+    ports:
+      - "127.0.0.1:3000:3000"
+    env_file:
+      - path: .env.local
+        required: false
+    environment:
+      BOOKS_DATABASE_PATH: /app/data/books.sqlite
+      CAMP_DATABASE_PATH: /app/data/camp-schedule.sqlite
+      WATCHLIST_DATABASE_PATH: /app/data/watchlist.sqlite
+    volumes:
+      - ./data:/app/data
+      - ./backups:/app/backups

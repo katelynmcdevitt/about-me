@@ -26,6 +26,20 @@ Run `npm run format` to format supported project files with Prettier, or `npm ru
 
 Run `npm run hooks:install` once per clone to enable the pre-commit formatting check. It checks the staged snapshot and blocks the commit if formatting fails; run `npm run format` and stage the desired changes before retrying.
 
+## Run locally with Docker
+
+Install Docker with Compose 2.24 or newer, then run:
+
+```sh
+docker compose up --build -d
+```
+
+Open http://127.0.0.1:3000. The container listens internally on all interfaces, but Compose publishes the port only on this computer's loopback interface. Stop it with `docker compose down`; rebuild with `docker compose up --build -d` after source changes. Stop any other server using port 3000 first.
+
+Compose mounts the project's existing `data/` and `backups/` directories into the container, so the same default SQLite databases and backup files remain on your computer across container rebuilds. Stop the non-container server before starting the container, and vice versa. Custom database path settings are overridden inside the container; move or back up custom databases deliberately before switching. On Linux, the container runs as root and newly created files in these mounted directories may be owned by root.
+
+The optional `.env.local` is passed to the running container for settings such as `WATCHMODE_API_KEY` and `WATCHLIST_REGION`; it is excluded from the image and build context. Restart the container after changing it with `docker compose up -d --force-recreate`. To run the existing online backup scripts while the container is running, use `docker compose exec app npm run db:backup`, `docker compose exec app npm run db:backup:camps`, or `docker compose exec app npm run db:backup:watchlist`. The resulting files appear in the local `backups/` directory.
+
 ## Structure
 
 ```text
